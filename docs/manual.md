@@ -129,6 +129,11 @@ token. A fine-grained personal access token is the accepted shortcut for persona
 token cannot approve pull requests unless the organisation has enabled that, so repositories whose protection
 requires an approval need an identity of their own.
 
+The workflow templates take either: set the `PR_AUTOPILOT_APP_ID` repository **variable** and the
+`PR_AUTOPILOT_APP_PRIVATE_KEY` secret and they mint an installation token per run, or leave the variable unset and
+they fall back to the `PR_AUTOPILOT_TOKEN` secret. The App's installation needs contents: write and
+pull-requests: write.
+
 ## Commands
 
 ```bash

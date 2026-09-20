@@ -60,10 +60,19 @@ autopilot is only a reporting tool until the checks improve. Loosen only when th
 - Check improvements, each as its own commit with a message saying what it protects against, so the operator can
   drop them individually.
 
-Labels are not part of the pull request — create them directly: `pr_autopilot.py labels --repo <owner/repo>`.
+Labels are not part of the pull request: `pr_autopilot.py labels --repo <owner/repo>` writes the five labels
+straight to GitHub. Because it lands outside the pull request the operator is reviewing, show them the command and
+the labels it creates, and wait for an explicit go-ahead before running it. Never create labels unasked, and never
+run it against a repository the operator has not named.
 
-Finally, tell the operator to add the repository to their fleet file and to set `PR_AUTOPILOT_TOKEN`; the
-autopilot does nothing until both exist.
+Finally, the identity: the delivered workflow sweeps this repository on its own schedule, so the one thing left
+outside the pull request is the credential it runs as, without which the autopilot does nothing. Point the operator
+at a GitHub App installed on the repository — the documented path (ADR 0014): the audit log shows the autopilot
+rather than a person, and permissions are scoped per repository. They set the `PR_AUTOPILOT_APP_ID` repository
+variable and the `PR_AUTOPILOT_APP_PRIVATE_KEY` secret, and the workflow mints an installation token per run. A
+fine-grained personal access token in `PR_AUTOPILOT_TOKEN` is the fallback the templates also accept — a shortcut
+for a personal repository or early testing, not the recommendation. Either identity needs approve and merge rights,
+because `GITHUB_TOKEN` cannot approve.
 
 ### 4. Verify
 
