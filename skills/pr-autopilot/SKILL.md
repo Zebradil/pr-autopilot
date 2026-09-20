@@ -55,10 +55,11 @@ autopilot is only a reporting tool until the checks improve. Loosen only when th
 - Renovate metadata, if `renovate.json` is in reach — this is what makes update classes reliable (ADR 0007):
 
   ```json
-  "prBodyNotes": [
-    "<!-- pr-autopilot:upgrades [{{#each upgrades}}{\"depName\":\"{{{depName}}}\",\"updateType\":\"{{{updateType}}}\",\"currentValue\":\"{{{currentValue}}}\",\"newValue\":\"{{{newValue}}}\"}{{#unless @last}},{{/unless}}{{/each}}] -->"
-  ]
+  "prHeader": "<!-- pr-autopilot:upgrades [{{#each upgrades}}{\"depName\":\"{{{depName}}}\",\"updateType\":\"{{{updateType}}}\",\"currentValue\":\"{{{currentValue}}}\",\"newValue\":\"{{{newValue}}}\"}{{#unless @last}},{{/unless}}{{/each}}] -->"
   ```
+
+  `prHeader`, not `prBodyNotes`: notes are compiled once per upgrade with only that upgrade in scope, so the
+  `upgrades` loop renders an empty list. `prFooter` has the right scope but replaces Renovate's attribution line.
 
 - Check improvements, each as its own commit with a message saying what it protects against, so the operator can
   drop them individually.

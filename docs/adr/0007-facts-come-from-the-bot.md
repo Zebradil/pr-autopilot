@@ -2,8 +2,10 @@
 
 The engine does not infer an upgrade's update class from the PR title, branch name or body prose, and does not ask a
 model to read the diff. Renovate already computed `depName`, `currentVersion`, `newVersion` and `updateType` for every
-upgrade, so onboarding configures it to emit them as machine-readable JSON in the PR body (`prBodyNotes` / `prFooter`
-over `{{#each upgrades}}`), and the engine reads that. Parsing the standard body table remains as a fallback for
+upgrade, so onboarding configures it to emit them as machine-readable JSON in the PR body (`prHeader` over
+`{{#each upgrades}}`), and the engine reads that. It has to be `prHeader`: Renovate compiles `prBodyNotes` once per
+upgrade, where `upgrades` is not in scope and the loop renders an empty list, while `prFooter` would displace
+Renovate's own attribution line. Parsing the standard body table remains as a fallback for
 repositories whose bot configuration is out of reach and for Dependabot.
 
 Prose parsing was rejected because grouping conventions differ per repository and per team: a single PR may carry
