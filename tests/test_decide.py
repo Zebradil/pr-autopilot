@@ -1,13 +1,18 @@
 """Verdict tests: the lookup that decides whether a bot pull request merges."""
 
+import contextlib
+import io
 import sys
 import unittest
+from unittest import mock
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from pr_autopilot import IGNORE, Facts, Label, Policy, Upgrade, decide, worst  # noqa: E402
+from pr_autopilot import (  # noqa: E402
+    IGNORE, Facts, Label, Policy, Result, Upgrade, decide, main, worst,
+)
 
 POLICY = Policy(table={"patch": "merge", "minor": "merge", "digest": "merge",
                        "lockfile": "merge", "major": "escalate"})
@@ -135,6 +140,30 @@ class TestPolicyFile(unittest.TestCase):
     def test_reads_limits_and_strategy(self):
         p = Policy.from_toml(b'[policy]\npatch="merge"\n[limits]\nmax_merges=2\n[repair]\nstrategy="side-pr"\n')
         self.assertEqual((p.max_merges, p.repair_strategy, p.for_class("patch")), (2, "side-pr", "merge"))
+
+
+class TestExitCode(unittest.TestCase):
+    """The exit code says whether the sweep ran, not what it decided."""
+
+    def sweep(self, *outcomes: str) -> int:
+        results = [Result("o/r", i, "t", "merge", "why", o) for i, o in enumerate(outcomes)]
+        with mock.patch("pr_autopilot.shutil.which", return_value="/usr/bin/gh"), \
+             mock.patch("pr_autopilot.fetch_policy", return_value=POLICY), \
+             mock.patch("pr_autopilot.list_bot_prs", return_value=list(range(len(outcomes)))), \
+             mock.patch("pr_autopilot.sweep_repo", return_value=results), \
+             contextlib.redirect_stdout(io.StringIO()):
+            return main(["sweep", "--repo", "o/r"])
+
+    def test_a_lone_unmerged_pr_is_not_a_failed_sweep(self):
+        # The regression: keying the exit code off one result's outcome turned a repository
+        # with a single pull request waiting on checks into a red scheduled run every night.
+        for outcome in ("no action", "would merge", "escalated", "deferred"):
+            with self.subTest(outcome=outcome):
+                self.assertEqual(self.sweep(outcome), 0)
+
+    def test_merges_and_escalations_alike_exit_zero(self):
+        self.assertEqual(self.sweep("merged"), 0)
+        self.assertEqual(self.sweep("merged", "escalated"), 0)
 
 
 if __name__ == "__main__":

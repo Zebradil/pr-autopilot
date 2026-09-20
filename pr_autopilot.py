@@ -682,8 +682,9 @@ def main(argv=None) -> int:
         results += sweep_repo(repo, numbers, policy, args)
 
     report(results, args.as_json)
-    if len(results) == 1:
-        return 0 if results[0].outcome == "merged" else 1
+    # Exit code reports whether the sweep ran, never what it decided. A pull request waiting on
+    # checks, or correctly escalated, is a successful sweep — and since a crash also exits
+    # non-zero, an outcome-derived code cannot be told apart from a broken one anyway.
     return 0
 
 
