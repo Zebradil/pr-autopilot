@@ -129,10 +129,101 @@ token. A fine-grained personal access token is the accepted shortcut for persona
 token cannot approve pull requests unless the organisation has enabled that, so repositories whose protection
 requires an approval need an identity of their own.
 
-The workflow templates take either: set the `PR_AUTOPILOT_APP_ID` repository **variable** and the
+The workflow templates take either: set the `PR_AUTOPILOT_CLIENT_ID` repository **variable** and the
 `PR_AUTOPILOT_APP_PRIVATE_KEY` secret and they mint an installation token per run, or leave the variable unset and
-they fall back to the `PR_AUTOPILOT_TOKEN` secret. The App's installation needs contents: write and
-pull-requests: write.
+they fall back to the `PR_AUTOPILOT_TOKEN` secret.
+
+### Permissions
+
+Repository permissions, both for a GitHub App and for a fine-grained personal access token:
+
+| Permission      | Access         | Why                                                                          |
+| --------------- | -------------- | ---------------------------------------------------------------------------- |
+| Metadata        | Read           | Mandatory; GitHub selects it automatically.                                    |
+| Contents        | Read and write | Reads `.github/pr-autopilot.toml`; merges, and deletes the merged branch.      |
+| Pull requests   | Read and write | Reads bot pull requests, approves, merges, labels, writes the state comment.   |
+| Checks          | Read           | The check-run half of the check rollup a verdict is computed from.             |
+| Commit statuses | Read           | The legacy-status half of the same rollup.                                     |
+| Issues          | Read and write | `pr_autopilot.py labels` creates labels, which are an Issues endpoint.         |
+| Workflows       | Write          | Only where bot pull requests touch `.github/workflows/`.                       |
+
+No account permissions, no organisation permissions, no webhook.
+
+Workflows write is the one to think about: a GitHub Actions version bump edits a workflow file, and an App without
+that permission cannot merge it (believed correct, verify before relying on it). Repositories whose bots only touch
+application dependencies do not need it.
+
+### Creating the App
+
+An App belongs to a personal account or an organisation and is then *installed* on the repositories it may act on.
+Create it once and install it on every repository the autopilot governs.
+
+1. **Settings → Developer settings → GitHub Apps → New GitHub App.** For an organisation, the same page under the
+   organisation's settings, so the App is owned by the organisation rather than by you.
+2. **Name** it something recognisable in the audit log and on the approvals it leaves — `pr-autopilot` if free,
+   otherwise `pr-autopilot-<account>`; the name is global. **Homepage URL** is required but unused: this repository's
+   URL does.
+3. **Webhook: uncheck Active.** The engine polls; nothing calls back.
+4. **Repository permissions:** the table above.
+5. **Where can this GitHub App be installed:** *Only on this account*.
+6. **Create GitHub App**, then note the **Client ID** from the App's General page — `Iv23li…`. GitHub is moving
+   identification from the numeric App ID to the Client ID, and `actions/create-github-app-token` marks its
+   `app-id` input deprecated in favour of `client-id`; the templates use the Client ID.
+7. **Generate a private key** on the same page. The download is a one-time `.pem`; GitHub keeps only the public half.
+8. **Install App** in the left-hand menu → your account → *Only select repositories* → the repositories
+   the autopilot governs. Installing it is what grants the permissions; the App does nothing until then.
+
+Then, in each governed repository (Settings → Secrets and variables → Actions):
+
+- variable `PR_AUTOPILOT_CLIENT_ID` — the Client ID from step 6.
+- secret `PR_AUTOPILOT_APP_PRIVATE_KEY` — the whole `.pem` file, `-----BEGIN` and `-----END` lines included.
+
+Both can live on the organisation instead of on each repository if more than one is governed.
+
+The App also has to be allowed through whatever guards the default branch — see **Branch rules** below.
+
+### The token shortcut
+
+A fine-grained personal access token with the same repository permissions, stored as the `PR_AUTOPILOT_TOKEN`
+secret, works for personal repositories and early testing. It expires, it acts as you in the audit log, and it
+carries your access rather than the repository's — which is the whole argument for the App
+([ADR 0014](./adr/0014-identity-for-unattended-runs.md)).
+
+## Branch rules
+
+Branch protection and rulesets decide whether a `merge` verdict actually merges. The autopilot never changes them:
+they are the repository's own safety net, and an agent relaxing a rule to get a pull request through is the failure
+mode the whole design exists to prevent. Onboarding reads them and reports what does not fit; changing them is the
+operator's click.
+
+Read the effective rules for a branch with:
+
+```bash
+gh api repos/{owner}/{repo}/rules/branches/{branch}   # effective rules; [] when the branch is unguarded
+gh api repos/{owner}/{repo}/rulesets                  # repository rulesets, if any
+```
+
+Prefer those over `repos/{owner}/{repo}/branches/{branch}/protection`, which answers 404 *Branch not protected* for
+an unguarded branch and needs admin rights.
+
+What has to hold for the autopilot to merge:
+
+| Rule                                | Effect                                                     |
+| ----------------------------------- | ---------------------------------------------------------- |
+| Require a pull request, N approvals | Fine — the App's review counts, and the bot is the author.  |
+| Require status checks to pass       | Fine, and wanted ([ADR 0008](./adr/0008-checks-are-the-contract.md)). |
+| Dismiss stale approvals on push     | Fine — the next sweep re-approves.                          |
+| Require linear history              | Fine — the engine merges with `--squash`.                   |
+| Restrict who can push or merge      | The App must be an allowed or bypass actor.                 |
+| Require review from Code Owners     | Blocks every merge.                                         |
+| Require signed commits              | Blocks `repair`.                                            |
+
+The last two are worth spelling out. **Code owner review** cannot be satisfied by the autopilot at all: CODEOWNERS
+takes users and teams, not Apps (believed correct, verify before relying on it), so a merge verdict approves and
+then sits at `blocked (approved; likely requires a human review)`. Either exempt bot pull requests from the rule or
+accept that this repository is a reporting tool. **Signed commits** leave merging intact — GitHub signs the squash
+commit — but a repair agent pushes ordinary commits to the bot's branch, which the rule rejects (believed correct,
+verify before relying on it).
 
 ## Commands
 

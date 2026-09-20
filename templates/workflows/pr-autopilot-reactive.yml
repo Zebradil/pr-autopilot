@@ -21,14 +21,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Mint a GitHub App installation token
-        # Set the PR_AUTOPILOT_APP_ID repository variable to use a GitHub App (the documented
-        # identity — see docs/manual.md, "Identity"). Leave it unset to fall back to the
-        # PR_AUTOPILOT_TOKEN secret. The App needs contents: write and pull-requests: write.
+        # Set the PR_AUTOPILOT_CLIENT_ID repository variable to use a GitHub App (the documented
+        # identity). Leave it unset to fall back to the PR_AUTOPILOT_TOKEN secret. Creating the
+        # App and the permissions it needs: docs/manual.md, "Identity".
         id: app-token
-        if: vars.PR_AUTOPILOT_APP_ID != ''
+        if: vars.PR_AUTOPILOT_CLIENT_ID != ''
         uses: actions/create-github-app-token@v2
         with:
-          app-id: ${{ vars.PR_AUTOPILOT_APP_ID }}
+          client-id: ${{ vars.PR_AUTOPILOT_CLIENT_ID }}
           private-key: ${{ secrets.PR_AUTOPILOT_APP_PRIVATE_KEY }}
       - name: Fetch the engine
         run: |

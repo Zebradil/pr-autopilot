@@ -21,8 +21,11 @@ Deterministic, do these first:
   config, `goreleaser`, tag-triggered workflows, a `CHANGELOG.md` that is clearly generated.
 - Does the default branch reach production? Read every workflow triggered by `push` to the default branch and
   follow it to deploy steps, `environment:` blocks, cloud credentials.
-- Gates: `atlantis.yaml`, `terraform`/`terragrunt` directories, plan jobs, and the repository's required checks
-  (`gh api repos/{owner}/{repo}/branches/{branch}/protection` — may 404 without admin rights).
+- Gates: `atlantis.yaml`, `terraform`/`terragrunt` directories, plan jobs.
+- Branch rules on the default branch: `gh api repos/{owner}/{repo}/rules/branches/{branch}` for the effective
+  rules (`[]` means unguarded) and `gh api repos/{owner}/{repo}/rulesets`. Check them against the table in
+  `docs/manual.md`, "Branch rules" — a required code-owner review, or a push restriction the App is not listed in,
+  means `merge` verdicts will stall no matter how good the policy is.
 - Bot configuration in reach: `renovate.json`, `.github/renovate.json5`, `.github/dependabot.yml`.
 - Existing checks: what the CI actually runs, and on which events.
 
@@ -60,6 +63,12 @@ autopilot is only a reporting tool until the checks improve. Loosen only when th
 - Check improvements, each as its own commit with a message saying what it protects against, so the operator can
   drop them individually.
 
+Branch rules live in repository settings, not in the diff, so they go in the pull request description as a short
+list: the rule, why it blocks the autopilot, and the smallest change that would unblock it. Suggest, never apply —
+editing a repository's protection to make pull requests merge is the same move as weakening a check, and it is not
+yours to make even with an admin token. If the rules are already compatible, say so in one line; the operator
+should not have to re-derive it.
+
 Labels are not part of the pull request: `pr_autopilot.py labels --repo <owner/repo>` writes the five labels
 straight to GitHub. Because it lands outside the pull request the operator is reviewing, show them the command and
 the labels it creates, and wait for an explicit go-ahead before running it. Never create labels unasked, and never
@@ -68,11 +77,12 @@ run it against a repository the operator has not named.
 Finally, the identity: the delivered workflow sweeps this repository on its own schedule, so the one thing left
 outside the pull request is the credential it runs as, without which the autopilot does nothing. Point the operator
 at a GitHub App installed on the repository — the documented path (ADR 0014): the audit log shows the autopilot
-rather than a person, and permissions are scoped per repository. They set the `PR_AUTOPILOT_APP_ID` repository
+rather than a person, and permissions are scoped per repository. They set the `PR_AUTOPILOT_CLIENT_ID` repository
 variable and the `PR_AUTOPILOT_APP_PRIVATE_KEY` secret, and the workflow mints an installation token per run. A
 fine-grained personal access token in `PR_AUTOPILOT_TOKEN` is the fallback the templates also accept — a shortcut
 for a personal repository or early testing, not the recommendation. Either identity needs approve and merge rights,
-because `GITHUB_TOKEN` cannot approve.
+because `GITHUB_TOKEN` cannot approve. The steps for creating the App and the permissions it needs are in
+`docs/manual.md`, "Identity" — send the operator there rather than reciting them.
 
 ### 4. Verify
 
@@ -96,3 +106,4 @@ You are given a pull request carrying `autopilot/escalated`. Read the sticky com
 - Merge, approve, or label a pull request on the autopilot's behalf.
 - Edit a policy file to make a specific stuck pull request merge. Policy describes a repository, not a pull request.
 - Weaken or disable a check to turn a red pull request green.
+- Change branch protection or a ruleset. Report what blocks the autopilot; the operator decides.
