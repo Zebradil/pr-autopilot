@@ -11,7 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from pr_autopilot import (  # noqa: E402
-    IGNORE, Facts, Label, Policy, Result, Upgrade, decide, main, worst,
+    IGNORE, Facts, GhError, Label, Policy, Result, Upgrade, decide, main, worst,
 )
 
 POLICY = Policy(table={"patch": "merge", "minor": "merge", "digest": "merge",
@@ -164,6 +164,38 @@ class TestExitCode(unittest.TestCase):
     def test_merges_and_escalations_alike_exit_zero(self):
         self.assertEqual(self.sweep("merged"), 0)
         self.assertEqual(self.sweep("merged", "escalated"), 0)
+
+
+class TestBrokenSweep(unittest.TestCase):
+    """A sweep that could not run must never read as a sweep that found nothing to do."""
+
+    def run_main(self, **patches) -> tuple[int, str]:
+        out = io.StringIO()
+        with mock.patch("pr_autopilot.shutil.which", return_value="/usr/bin/gh"), \
+             contextlib.ExitStack() as stack, \
+             contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            for target, kw in patches.items():
+                stack.enter_context(mock.patch(f"pr_autopilot.{target}", **kw))
+            return main(["sweep", "--repo", "o/r"]), out.getvalue()
+
+    def test_an_unauthenticated_gh_fails_the_sweep(self):
+        # The regression: an empty GH_TOKEN made the policy fetch fail, which was filed under
+        # "no usable policy; skipping", and the run went green having triaged nothing.
+        code, out = self.run_main(
+            gh_json=dict(side_effect=GhError("gh: To use GitHub CLI in a GitHub Actions workflow, "
+                                             "set the GH_TOKEN environment variable.")))
+        self.assertEqual(code, 1)
+        self.assertNotIn("no bot pull requests", out)
+
+    def test_a_repository_without_a_policy_is_still_skipped(self):
+        code, out = self.run_main(gh_json=dict(side_effect=GhError("gh: Not Found (HTTP 404)")))
+        self.assertEqual(code, 0)
+        self.assertIn("no bot pull requests", out)
+
+    def test_a_failure_while_listing_pull_requests_fails_the_sweep(self):
+        code, _ = self.run_main(fetch_policy=dict(return_value=POLICY),
+                                list_bot_prs=dict(side_effect=GhError("HTTP 502")))
+        self.assertEqual(code, 1)
 
 
 if __name__ == "__main__":

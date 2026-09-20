@@ -418,6 +418,10 @@ class GhError(RuntimeError):
     pass
 
 
+class PolicyMissing(GhError):
+    """The repository has no policy file — the one gh failure that means "not governed"."""
+
+
 def gh(*args: str, check: bool = True) -> str:
     proc = subprocess.run(["gh", *args], capture_output=True, text=True)
     if check and proc.returncode != 0:
@@ -433,7 +437,14 @@ def fetch_policy(repo: str, path: str | None) -> Policy:
     if path:
         with open(path, "rb") as fh:
             return Policy.from_toml(fh.read())
-    blob = gh_json("api", f"repos/{repo}/contents/{POLICY_PATH}")
+    try:
+        blob = gh_json("api", f"repos/{repo}/contents/{POLICY_PATH}")
+    except GhError as err:
+        # Anything else — a bad or missing token, a network fault, a 5xx — is a broken sweep,
+        # not an ungoverned repository, and must not be swallowed as one.
+        if "404" in str(err) or "Not Found" in str(err):
+            raise PolicyMissing(str(err)) from err
+        raise
     return Policy.from_toml(base64.b64decode(blob["content"]))
 
 
@@ -675,16 +686,23 @@ def main(argv=None) -> int:
     for repo in repos:
         try:
             policy = fetch_policy(repo, args.config)
-        except (GhError, ValueError, OSError) as err:
-            print(f"{repo}: no usable policy ({err}); skipping", file=sys.stderr)
+        except PolicyMissing:
+            print(f"{repo}: no {POLICY_PATH}; skipping", file=sys.stderr)
             continue
-        numbers = args.prs or list_bot_prs(repo, policy)
-        results += sweep_repo(repo, numbers, policy, args)
+        except (GhError, ValueError, OSError) as err:
+            print(f"pr-autopilot: {repo}: {err}", file=sys.stderr)
+            return 1
+        try:
+            numbers = args.prs or list_bot_prs(repo, policy)
+            results += sweep_repo(repo, numbers, policy, args)
+        except GhError as err:
+            print(f"pr-autopilot: {repo}: {err}", file=sys.stderr)
+            return 1
 
     report(results, args.as_json)
-    # Exit code reports whether the sweep ran, never what it decided. A pull request waiting on
-    # checks, or correctly escalated, is a successful sweep — and since a crash also exits
-    # non-zero, an outcome-derived code cannot be told apart from a broken one anyway.
+    # Exit code reports whether the sweep ran, never what it decided: a pull request waiting on
+    # checks, or correctly escalated, is a successful sweep. Non-zero is reserved for a sweep that
+    # could not run — a bad token or an unreachable API — which otherwise reads as "nothing to do".
     return 0
 
 
