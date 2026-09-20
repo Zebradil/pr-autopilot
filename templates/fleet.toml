@@ -1,0 +1,6 @@
+# Operator-side fleet list: pr-autopilot sweep --fleet ~/.config/pr-autopilot/fleet.toml
+# Membership is explicit on purpose (ADR 0010).
+repos = [
+  "Zebradil/sito",
+  "Zebradil/kasha",
+]

@@ -1,0 +1,36 @@
+# Scheduled and manual sweeps. Copy to .github/workflows/ in the governed repository.
+name: pr-autopilot sweep
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Show verdicts without acting
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: pr-autopilot-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch the engine
+        run: |
+          curl -fsSL -o pr_autopilot.py \
+            https://raw.githubusercontent.com/Zebradil/pr-autopilot/v1/pr_autopilot.py
+      - name: Sweep
+        env:
+          # A token that may approve pull requests — see docs/manual.md, "Identity".
+          GH_TOKEN: ${{ secrets.PR_AUTOPILOT_TOKEN }}
+        run: |
+          python3 pr_autopilot.py sweep --repo "$GITHUB_REPOSITORY" \
+            ${{ inputs.dry_run && '--dry-run' || '' }}

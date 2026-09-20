@@ -1,0 +1,403 @@
+{
+  "airgradient-exporter-56-action-major.json": {
+    "author": "app/renovate",
+    "upgrades": [
+      [
+        "actions/checkout",
+        "major",
+        "v6.1.0",
+        "v7.0.1"
+      ]
+    ],
+    "checks": [
+      0,
+      0,
+      5
+    ],
+    "verdict": "escalate",
+    "reason": "policy: major"
+  },
+  "hugo-theme-zeta-83-dependabot-conflicting.json": {
+    "author": "app/dependabot",
+    "upgrades": [
+      [
+        "postcss",
+        "patch",
+        "8.4.21",
+        "8.4.31"
+      ]
+    ],
+    "checks": [
+      0,
+      0,
+      0
+    ],
+    "verdict": "repair",
+    "reason": "conflicting"
+  },
+  "hugo-theme-zeta-97-security-npm.json": {
+    "author": "app/renovate",
+    "upgrades": [
+      [
+        "@babel/core",
+        "minor",
+        "7.26.0",
+        "7.29.6"
+      ]
+    ],
+    "checks": [
+      0,
+      0,
+      0
+    ],
+    "verdict": "escalate",
+    "reason": "no checks ran"
+  },
+  "kasha-49-single-crate-patch.json": {
+    "author": "app/renovate",
+    "upgrades": [
+      [
+        "clap",
+        "patch",
+        "4.6.6",
+        "4.6.7"
+      ]
+    ],
+    "checks": [
+      0,
+      0,
+      4
+    ],
+    "verdict": "merge",
+    "reason": "policy: patch"
+  },
+  "know-mcp-25-rust-minor-group.json": {
+    "author": "app/renovate",
+    "upgrades": [
+      [
+        "argon2",
+        "minor",
+        "=0.5.3",
+        "=0.6.0"
+      ],
+      [
+        "axum",
+        "minor",
+        "=0.7.9",
+        "=0.8.9"
+      ],
+      [
+        "base64",
+        "minor",
+        "=0.22.1",
+        "=0.23.1"
+      ],
+      [
+        "clap",
+        "patch",
+        "=4.6.6",
+        "=4.6.7"
+      ],
+      [
+        "futures-util",
+        "patch",
+        "=0.3.33",
+        "=0.3.34"
+      ],
+      [
+        "getrandom",
+        "minor",
+        "=0.2.17",
+        "=0.4.3"
+      ],
+      [
+        "jiff",
+        "minor",
+        "=0.1.29",
+        "=0.2.37"
+      ],
+      [
+        "notify-debouncer-mini",
+        "minor",
+        "=0.6.0",
+        "=0.7.0"
+      ],
+      [
+        "rand",
+        "minor",
+        "=0.8.7",
+        "=0.10.3"
+      ],
+      [
+        "reqwest",
+        "minor",
+        "=0.12.28",
+        "=0.13.5"
+      ],
+      [
+        "reqwest",
+        "minor",
+        "=0.12.28",
+        "=0.13.5"
+      ],
+      [
+        "sha1",
+        "minor",
+        "=0.10.7",
+        "=0.11.0"
+      ],
+      [
+        "sha2",
+        "minor",
+        "=0.10.9",
+        "=0.11.0"
+      ],
+      [
+        "sqlx",
+        "minor",
+        "=0.8.6",
+        "=0.9.0"
+      ],
+      [
+        "sqlx",
+        "minor",
+        "=0.8.6",
+        "=0.9.0"
+      ],
+      [
+        "tower-http",
+        "minor",
+        "=0.6.11",
+        "=0.7.1"
+      ]
+    ],
+    "checks": [
+      3,
+      0,
+      3
+    ],
+    "verdict": "repair",
+    "reason": "failing: fmt, clippy, test, cargo-deny, renovate/artifacts"
+  },
+  "know-mcp-27-docker-major.json": {
+    "author": "app/renovate",
+    "upgrades": [
+      [
+        "postgres",
+        "major",
+        "16-alpine",
+        "18-alpine"
+      ]
+    ],
+    "checks": [
+      1,
+      0,
+      2
+    ],
+    "verdict": "escalate",
+    "reason": "failing: cargo-deny"
+  },
+  "know-mcp-28-rust-major-group.json": {
+    "author": "app/renovate",
+    "upgrades": [
+      [
+        "jsonwebtoken",
+        "major",
+        "=9.3.1",
+        "=11.1.0"
+      ],
+      [
+        "rmcp",
+        "major",
+        "=1.8.0",
+        "=3.4.0"
+      ],
+      [
+        "similar",
+        "major",
+        "=2.7.0",
+        "=3.2.0"
+      ]
+    ],
+    "checks": [
+      2,
+      0,
+      2
+    ],
+    "verdict": "escalate",
+    "reason": "failing: fmt, clippy, test, cargo-deny"
+  },
+  "know-mcp-29-lockfile-maintenance.json": {
+    "author": "app/renovate",
+    "upgrades": [
+      [
+        "(lock files)",
+        "lockfile",
+        "",
+        ""
+      ]
+    ],
+    "checks": [
+      0,
+      0,
+      2
+    ],
+    "verdict": "merge",
+    "reason": "policy: lockfile"
+  },
+  "powerline-taskwarrior-107-python-major.json": {
+    "author": "app/renovate",
+    "upgrades": [
+      [
+        "isort",
+        "major",
+        "^8.0.0",
+        "^9.0.0"
+      ]
+    ],
+    "checks": [
+      1,
+      0,
+      7
+    ],
+    "verdict": "escalate",
+    "reason": "failing: renovate/artifacts"
+  },
+  "renovate-regex-manager-validator-action-36-dependabot-group.json": {
+    "author": "app/dependabot",
+    "upgrades": [
+      [
+        "@eslint/compat",
+        "minor",
+        "1.2.7",
+        "1.4.0"
+      ],
+      [
+        "@rollup/plugin-commonjs",
+        "patch",
+        "28.0.3",
+        "28.0.6"
+      ],
+      [
+        "@rollup/plugin-node-resolve",
+        "patch",
+        "16.0.1",
+        "16.0.2"
+      ],
+      [
+        "@rollup/plugin-typescript",
+        "patch",
+        "12.1.2",
+        "12.1.4"
+      ],
+      [
+        "@types/node",
+        "minor",
+        "20.17.28",
+        "20.19.19"
+      ],
+      [
+        "@typescript-eslint/eslint-plugin",
+        "minor",
+        "8.28.0",
+        "8.45.0"
+      ],
+      [
+        "eslint",
+        "minor",
+        "9.23.0",
+        "9.37.0"
+      ],
+      [
+        "eslint-config-prettier",
+        "patch",
+        "10.1.1",
+        "10.1.8"
+      ],
+      [
+        "eslint-import-resolver-typescript",
+        "minor",
+        "4.2.5",
+        "4.4.4"
+      ],
+      [
+        "eslint-plugin-import",
+        "minor",
+        "2.31.0",
+        "2.32.0"
+      ],
+      [
+        "eslint-plugin-prettier",
+        "minor",
+        "5.2.5",
+        "5.5.4"
+      ],
+      [
+        "prettier",
+        "minor",
+        "3.5.3",
+        "3.6.2"
+      ],
+      [
+        "prettier-eslint",
+        "minor",
+        "16.3.0",
+        "16.4.2"
+      ],
+      [
+        "rollup",
+        "minor",
+        "4.37.0",
+        "4.52.4"
+      ],
+      [
+        "ts-jest",
+        "minor",
+        "29.3.0",
+        "29.4.4"
+      ],
+      [
+        "typescript",
+        "minor",
+        "5.8.2",
+        "5.9.3"
+      ]
+    ],
+    "checks": [
+      2,
+      0,
+      22
+    ],
+    "verdict": "repair",
+    "reason": "failing: Check dist/, TypeScript Tests"
+  },
+  "rustotpony-73-dependabot-rust.json": {
+    "author": "app/dependabot",
+    "upgrades": [
+      [
+        "rand",
+        "patch",
+        "0.8.5",
+        "0.8.6"
+      ]
+    ],
+    "checks": [
+      0,
+      0,
+      4
+    ],
+    "verdict": "merge",
+    "reason": "policy: patch"
+  },
+  "tree-sitter-test_highlights-1-onboarding.json": {
+    "author": "app/renovate",
+    "upgrades": [],
+    "checks": [
+      0,
+      0,
+      0
+    ],
+    "verdict": "escalate",
+    "reason": "no checks ran"
+  }
+}

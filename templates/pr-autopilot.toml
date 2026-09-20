@@ -1,0 +1,29 @@
+# Copy to .github/pr-autopilot.toml in the repository this governs.
+enabled = true
+
+# Documentation only — the engine never reads this table (ADR 0012). It records what onboarding
+# concluded about the repository, and why the policy below looks the way it does.
+[risk]
+release_mode      = "manual"   # none | manual | auto-from-main | release-please
+deploys_from_main = false
+test_confidence   = "high"     # none | low | high
+criticality       = "normal"   # low | normal | high
+
+# The only thing the engine consults. Values are verdicts; an update class that is absent here
+# escalates.
+[policy]
+patch    = "merge"
+minor    = "merge"
+major    = "escalate"
+digest   = "merge"
+pin      = "merge"
+lockfile = "merge"
+
+[limits]
+max_merges    = 10   # merges per sweep
+max_repairs   = 3    # agent dispatches per sweep
+attempt_cap   = 2    # repair attempts per pull request, then escalate for good
+lease_minutes = 30   # how long one sweep's claim on a pull request lasts
+
+[repair]
+strategy = "bot-branch"   # bot-branch | side-pr
