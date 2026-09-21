@@ -18,8 +18,9 @@ import string
 import subprocess
 import sys
 import time
-import tomllib
 from datetime import datetime, timedelta, timezone
+
+import tomllib
 
 __version__ = "1.2.0"  # x-release-please-version
 
@@ -33,7 +34,13 @@ PR_FIELDS = (
     "statusCheckRollup,headRefName,url,comments"
 )
 
-FAILING_CONCLUSIONS = {"FAILURE", "TIMED_OUT", "CANCELLED", "STARTUP_FAILURE", "ACTION_REQUIRED"}
+FAILING_CONCLUSIONS = {
+    "FAILURE",
+    "TIMED_OUT",
+    "CANCELLED",
+    "STARTUP_FAILURE",
+    "ACTION_REQUIRED",
+}
 FAILING_STATES = {"FAILURE", "ERROR"}
 PENDING_STATES = {"PENDING", "EXPECTED"}
 
@@ -204,7 +211,11 @@ def classify(current: str, new: str) -> str:
     current, new = (current or "").strip("`"), (new or "").strip("`")
     if not current or not new or current == new:
         return "unknown"
-    if "sha256:" in current or "sha256:" in new or (HEX.match(current) and HEX.match(new)):
+    if (
+        "sha256:" in current
+        or "sha256:" in new
+        or (HEX.match(current) and HEX.match(new))
+    ):
         return "digest"
     cur, nxt = version_parts(current), version_parts(new)
     if not cur or not nxt or nxt < cur:
@@ -229,7 +240,7 @@ DEPENDABOT_SINGLE = re.compile(
 
 
 def split_change(cell: str) -> tuple[str, str]:
-    """"`1.2.3` → `1.3.0`" into its two sides; anything without an arrow yields nothing."""
+    """ "`1.2.3` → `1.3.0`" into its two sides; anything without an arrow yields nothing."""
     parts = CHANGE_SEP.split(cell, maxsplit=1)
     return (parts[0], parts[1]) if len(parts) == 2 else ("", "")
 
@@ -248,9 +259,14 @@ def parse_body_table(body: str) -> list[Upgrade]:
         line = line.strip()
         if not line.startswith("|"):
             continue
-        cells = [PARENTHETICAL.sub("", TABLE_LINK.sub(r"\1", c).strip()) for c in line.strip("|").split("|")]
+        cells = [
+            PARENTHETICAL.sub("", TABLE_LINK.sub(r"\1", c).strip())
+            for c in line.strip("|").split("|")
+        ]
         lowered = [c.lower() for c in cells]
-        if {"change", "to", "update"} & set(lowered) and ("package" in lowered or "update" in lowered):
+        if {"change", "to", "update"} & set(lowered) and (
+            "package" in lowered or "update" in lowered
+        ):
             header = lowered
             continue
         if header is None or all(set(c) <= {"-", ":", " "} for c in cells):
@@ -262,11 +278,19 @@ def parse_body_table(body: str) -> list[Upgrade]:
         update_class = normalise_class(cell.get("update", ""))
         if update_class == "unknown":
             update_class = classify(current, new)
-        name = cell.get("package") or ("(lock files)" if update_class == "lockfile" else "")
+        name = cell.get("package") or (
+            "(lock files)" if update_class == "lockfile" else ""
+        )
         if not name:
             continue
-        rows.append(Upgrade(name=name, update_class=update_class,
-                            current=current.strip("` "), new=new.strip("` ")))
+        rows.append(
+            Upgrade(
+                name=name,
+                update_class=update_class,
+                current=current.strip("` "),
+                new=new.strip("` "),
+            )
+        )
     return rows
 
 
@@ -277,13 +301,21 @@ def parse_dependabot(body: str) -> list[Upgrade]:
         return []
     name = m.group("linked") or m.group("plain")
     current, new = m.group("current").rstrip("."), m.group("new").rstrip(".")
-    return [Upgrade(name=PARENTHETICAL.sub("", name), update_class=classify(current, new),
-                    current=current, new=new)]
+    return [
+        Upgrade(
+            name=PARENTHETICAL.sub("", name),
+            update_class=classify(current, new),
+            current=current,
+            new=new,
+        )
+    ]
 
 
 def parse_state_comment(comments) -> dict:
     for c in reversed(comments or []):
-        m = re.search(rf"<!--\s*{STATE_MARKER}\s*(\{{.*?\}})\s*-->", c.get("body", ""), re.S)
+        m = re.search(
+            rf"<!--\s*{STATE_MARKER}\s*(\{{.*?\}})\s*-->", c.get("body", ""), re.S
+        )
         if m:
             try:
                 state = json.loads(m.group(1))
@@ -339,7 +371,9 @@ class Policy:
     def from_dict(d: dict, default_bots: tuple[str, ...] = DEFAULT_BOTS) -> "Policy":
         table = {k: v for k, v in (d.get("policy") or {}).items() if k in CLASSES}
         extras = {"review_when", "allow_without_checks"}
-        unknown = {k for k in (d.get("policy") or {}) if k not in CLASSES and k not in extras}
+        unknown = {
+            k for k in (d.get("policy") or {}) if k not in CLASSES and k not in extras
+        }
         if unknown:
             raise ValueError(f"unknown update classes in [policy]: {sorted(unknown)}")
         bad = {v for v in table.values() if v not in VERDICTS}
@@ -353,7 +387,9 @@ class Policy:
             max_merges=limits.get("max_merges", 10),
             max_repairs=limits.get("max_repairs", 3),
             attempt_cap=limits.get("attempt_cap", 2),
-            allow_without_checks=(d.get("policy") or {}).get("allow_without_checks", False),
+            allow_without_checks=(d.get("policy") or {}).get(
+                "allow_without_checks", False
+            ),
             repair_strategy=(d.get("repair") or {}).get("strategy", "bot-branch"),
             lease_minutes=limits.get("lease_minutes", 30),
         )
@@ -365,7 +401,9 @@ class Policy:
 # --- the decision -----------------------------------------------------------------------------
 
 
-def decide(facts: Facts, policy: Policy, now: datetime | None = None) -> tuple[str, str]:
+def decide(
+    facts: Facts, policy: Policy, now: datetime | None = None
+) -> tuple[str, str]:
     """Return (verdict, reason). Pure: no IO, no clock beyond what is passed in."""
     now = now or datetime.now(timezone.utc)
 
@@ -391,12 +429,16 @@ def decide(facts: Facts, policy: Policy, now: datetime | None = None) -> tuple[s
         why = "policy: " + ", ".join(sorted(set(facts.classes)))
 
     if facts.attempts >= policy.attempt_cap:
-        return worst(policy_verdict, "escalate"), f"{facts.attempts} repair attempts, cap reached"
+        return worst(
+            policy_verdict, "escalate"
+        ), f"{facts.attempts} repair attempts, cap reached"
 
     if facts.mergeable == "CONFLICTING":
         return worst(policy_verdict, "repair"), "conflicting"
     if facts.checks_failing:
-        return worst(policy_verdict, "repair"), "failing: " + ", ".join(facts.checks_failing[:3])
+        return worst(policy_verdict, "repair"), "failing: " + ", ".join(
+            facts.checks_failing[:3]
+        )
     if facts.checks_pending:
         return worst(policy_verdict, "wait"), "checks pending"
     if facts.mergeable == "UNKNOWN":
@@ -442,10 +484,15 @@ def gh_json(*args: str):
 @dataclasses.dataclass(frozen=True)
 class Operator:
     """The operator's own file: bot allowlist, named presets, and the fleet with what governs each repo."""
+
     bots: tuple[str, ...] = DEFAULT_BOTS
     presets: dict = dataclasses.field(default_factory=dict)
-    repos: dict = dataclasses.field(default_factory=dict)  # "owner/name" -> {"preset": ...} | {"policy": ...} | {}
-    default: str | None = None  # preset for a repository with no entry and no in-repo file
+    repos: dict = dataclasses.field(
+        default_factory=dict
+    )  # "owner/name" -> {"preset": ...} | {"policy": ...} | {}
+    default: str | None = (
+        None  # preset for a repository with no entry and no in-repo file
+    )
     base_dir: str = "."
 
     @staticmethod
@@ -456,12 +503,20 @@ class Operator:
         if isinstance(repos, list):
             repos = {name: {} for name in repos}
         for name, entry in repos.items():
-            if not isinstance(entry, dict) or set(entry) - {"preset", "policy"} or len(entry) > 1:
-                raise ValueError(f"repos.{name!r}: want a table with at most one of preset, policy; got {entry!r}")
+            if (
+                not isinstance(entry, dict)
+                or set(entry) - {"preset", "policy"}
+                or len(entry) > 1
+            ):
+                raise ValueError(
+                    f"repos.{name!r}: want a table with at most one of preset, policy; got {entry!r}"
+                )
         presets = d.get("presets") or {}
         default = d.get("default")
         if default is not None and default not in presets:
-            raise ValueError(f"default: unknown preset {default!r}; known: {sorted(presets)}")
+            raise ValueError(
+                f"default: unknown preset {default!r}; known: {sorted(presets)}"
+            )
         return Operator(
             bots=tuple(d.get("bots") or DEFAULT_BOTS),
             presets=presets,
@@ -488,7 +543,9 @@ def default_operator_path() -> str:
     return os.path.join(xdg, "pr-autopilot", "config.toml")
 
 
-def resolve_policy(repo: str, operator: Operator, config: str | None, preset: str | None) -> Policy:
+def resolve_policy(
+    repo: str, operator: Operator, config: str | None, preset: str | None
+) -> Policy:
     """Explicit CLI choice first, then the operator's entry for the repo, the in-repo file, the operator's default."""
     if config:
         with open(config, "rb") as fh:
@@ -505,7 +562,10 @@ def resolve_policy(repo: str, operator: Operator, config: str | None, preset: st
     except PolicyMissing:
         if not operator.default:
             raise
-    print(f"{repo}: no {POLICY_PATH}; using default preset {operator.default!r}", file=sys.stderr)
+    print(
+        f"{repo}: no {POLICY_PATH}; using default preset {operator.default!r}",
+        file=sys.stderr,
+    )
     return operator.preset(operator.default)
 
 
@@ -531,10 +591,24 @@ def fetch_pr(repo: str, number: int) -> Facts:
 
 
 def list_bot_prs(repo: str, policy: Policy) -> list[int]:
-    prs = gh_json("pr", "list", "--repo", repo, "--state", "open", "--limit", "100",
-                  "--json", "number,author")
+    prs = gh_json(
+        "pr",
+        "list",
+        "--repo",
+        repo,
+        "--state",
+        "open",
+        "--limit",
+        "100",
+        "--json",
+        "number,author",
+    )
     allowed = {bot_name(b) for b in policy.bots}
-    return [p["number"] for p in prs if bot_name((p.get("author") or {}).get("login", "")) in allowed]
+    return [
+        p["number"]
+        for p in prs
+        if bot_name((p.get("author") or {}).get("login", "")) in allowed
+    ]
 
 
 # --- actions ----------------------------------------------------------------------------------
@@ -542,13 +616,46 @@ def list_bot_prs(repo: str, policy: Policy) -> list[int]:
 
 def approve_and_merge(facts: Facts) -> tuple[bool, str]:
     """Approve, then merge with the fallbacks a protected repository needs."""
-    gh("pr", "review", str(facts.number), "--repo", facts.repo, "--approve", check=False)
-    out = gh("pr", "merge", str(facts.number), "--repo", facts.repo,
-             "--squash", "--auto", "--delete-branch", check=False)
+    gh(
+        "pr",
+        "review",
+        str(facts.number),
+        "--repo",
+        facts.repo,
+        "--approve",
+        check=False,
+    )
+    out = gh(
+        "pr",
+        "merge",
+        str(facts.number),
+        "--repo",
+        facts.repo,
+        "--squash",
+        "--auto",
+        "--delete-branch",
+        check=False,
+    )
     if re.search(r"auto.?merge", out, re.I):
-        out = gh("pr", "merge", str(facts.number), "--repo", facts.repo,
-                 "--squash", "--delete-branch", check=False)
-    after = gh_json("pr", "view", str(facts.number), "--repo", facts.repo, "--json", "state,mergeStateStatus")
+        out = gh(
+            "pr",
+            "merge",
+            str(facts.number),
+            "--repo",
+            facts.repo,
+            "--squash",
+            "--delete-branch",
+            check=False,
+        )
+    after = gh_json(
+        "pr",
+        "view",
+        str(facts.number),
+        "--repo",
+        facts.repo,
+        "--json",
+        "state,mergeStateStatus",
+    )
     if after["state"] == "MERGED":
         return True, "merged"
     if after["mergeStateStatus"] == "BLOCKED":
@@ -585,27 +692,57 @@ def write_state(facts: Facts, dry_run: bool, **updates) -> None:
         return
     comment_id = facts.state_comment.get("_comment_id")
     if comment_id:
-        numeric = str(comment_id).rsplit("_", 1)[-1] if str(comment_id).startswith("IC_") else comment_id
+        numeric = (
+            str(comment_id).rsplit("_", 1)[-1]
+            if str(comment_id).startswith("IC_")
+            else comment_id
+        )
         try:
-            gh("api", "-X", "PATCH", f"repos/{facts.repo}/issues/comments/{numeric}",
-               "-f", f"body={body}")
+            gh(
+                "api",
+                "-X",
+                "PATCH",
+                f"repos/{facts.repo}/issues/comments/{numeric}",
+                "-f",
+                f"body={body}",
+            )
             return
         except GhError:
             pass  # comment gone or id not numeric — fall through to a new one
-    gh("pr", "comment", str(facts.number), "--repo", facts.repo, "--body", body, check=False)
+    gh(
+        "pr",
+        "comment",
+        str(facts.number),
+        "--repo",
+        facts.repo,
+        "--body",
+        body,
+        check=False,
+    )
 
 
-def dispatch_repair(facts: Facts, policy: Policy, reason: str, agent_command: str, dry_run: bool) -> tuple[str, str]:
+def dispatch_repair(
+    facts: Facts, policy: Policy, reason: str, agent_command: str, dry_run: bool
+) -> tuple[str, str]:
     """Run the configured agent on one PR. ADR 0011: it edits code, we own GitHub state."""
     if not agent_command:
         return "escalate", "repair needed but no agent configured"
-    lease = (datetime.now(timezone.utc) + timedelta(minutes=policy.lease_minutes)).isoformat(timespec="seconds")
-    write_state(facts, dry_run, attempts=facts.attempts + 1, lease_until=lease,
-                note=f"Repairing: {reason}")
+    lease = (
+        datetime.now(timezone.utc) + timedelta(minutes=policy.lease_minutes)
+    ).isoformat(timespec="seconds")
+    write_state(
+        facts,
+        dry_run,
+        attempts=facts.attempts + 1,
+        lease_until=lease,
+        note=f"Repairing: {reason}",
+    )
     prompt = render_prompt(facts, reason, policy)
     if dry_run:
         return "repair", "would dispatch agent"
-    proc = subprocess.run(agent_command, shell=True, input=prompt, capture_output=True, text=True)
+    proc = subprocess.run(
+        agent_command, shell=True, input=prompt, capture_output=True, text=True
+    )
     result = parse_agent_result(proc.stdout)
     write_state(facts, dry_run, lease_until=None, note=result["summary"])
     if result["outcome"] == "fixed":
@@ -631,22 +768,35 @@ def parse_agent_result(stdout: str) -> dict:
 
 
 def render_prompt(facts: Facts, reason: str, policy: Policy) -> str:
-    template_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "prompts", "repair.md")
+    template_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "prompts", "repair.md"
+    )
     with open(template_path) as fh:
         template = fh.read()
-    upgrades = "\n".join(f"- {u.name}: {u.current} -> {u.new} ({u.update_class})" for u in facts.upgrades)
+    upgrades = "\n".join(
+        f"- {u.name}: {u.current} -> {u.new} ({u.update_class})" for u in facts.upgrades
+    )
     # Template, not format(): the prompt contains a JSON example full of braces.
     return string.Template(template).safe_substitute(
-        repo=facts.repo, number=facts.number, title=facts.title, url=facts.url,
-        head_ref=facts.head_ref, reason=reason, upgrades=upgrades or "- (not parsed)",
+        repo=facts.repo,
+        number=facts.number,
+        title=facts.title,
+        url=facts.url,
+        head_ref=facts.head_ref,
+        reason=reason,
+        upgrades=upgrades or "- (not parsed)",
         failing=", ".join(facts.checks_failing) or "(none)",
         strategy=policy.repair_strategy,
     )
 
 
 def escalate(facts: Facts, reason: str, dry_run: bool) -> None:
-    write_state(facts, dry_run, note=f"Needs a human: {reason}\n\n"
-                f"Remove `{Label.ESCALATED}` and add `{Label.REVIEWED_OK}` to let the autopilot merge it.")
+    write_state(
+        facts,
+        dry_run,
+        note=f"Needs a human: {reason}\n\n"
+        f"Remove `{Label.ESCALATED}` and add `{Label.REVIEWED_OK}` to let the autopilot merge it.",
+    )
 
 
 # --- sweep ------------------------------------------------------------------------------------
@@ -683,7 +833,9 @@ def sweep_repo(repo: str, numbers: list[int], policy: Policy, args) -> list[Resu
                 verdict, reason, outcome = "wait", "max_repairs reached", "deferred"
             else:
                 repairs += 1
-                verdict, outcome = dispatch_repair(facts, policy, reason, args.agent_command, args.dry_run)
+                verdict, outcome = dispatch_repair(
+                    facts, policy, reason, args.agent_command, args.dry_run
+                )
         elif verdict == "escalate" and Label.ESCALATED not in facts.labels:
             escalate(facts, reason, args.dry_run)
             outcome = "escalated"
@@ -720,24 +872,51 @@ def create_labels(repo: str, dry_run: bool) -> None:
         if dry_run:
             print(f"would create {name}")
             continue
-        gh("label", "create", name, "--repo", repo, "--color", colour,
-           "--description", description, "--force", check=False)
+        gh(
+            "label",
+            "create",
+            name,
+            "--repo",
+            repo,
+            "--color",
+            colour,
+            "--description",
+            description,
+            "--force",
+            check=False,
+        )
         print(f"{name}")
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="pr-autopilot", description=__doc__)
-    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {__version__}"
+    )
     parser.add_argument("command", choices=["sweep", "labels"])
-    parser.add_argument("prs", nargs="*", type=int, help="pull request numbers (default: all bot PRs)")
-    parser.add_argument("--repo", help="owner/name (default: the repository in the current directory)")
-    parser.add_argument("--fleet", action="store_true",
-                        help="sweep every repository in the operator file "
-                             "($PR_AUTOPILOT_CONFIG or ~/.config/pr-autopilot/config.toml)")
-    parser.add_argument("--config", help="policy file to use instead of the one in the repository")
-    parser.add_argument("--preset", help="named preset from the operator file to use as the policy")
-    parser.add_argument("--agent-command", default=os.environ.get("PR_AUTOPILOT_AGENT", ""),
-                        help="command that repairs a PR, fed a prompt on stdin")
+    parser.add_argument(
+        "prs", nargs="*", type=int, help="pull request numbers (default: all bot PRs)"
+    )
+    parser.add_argument(
+        "--repo", help="owner/name (default: the repository in the current directory)"
+    )
+    parser.add_argument(
+        "--fleet",
+        action="store_true",
+        help="sweep every repository in the operator file "
+        "($PR_AUTOPILOT_CONFIG or ~/.config/pr-autopilot/config.toml)",
+    )
+    parser.add_argument(
+        "--config", help="policy file to use instead of the one in the repository"
+    )
+    parser.add_argument(
+        "--preset", help="named preset from the operator file to use as the policy"
+    )
+    parser.add_argument(
+        "--agent-command",
+        default=os.environ.get("PR_AUTOPILOT_AGENT", ""),
+        help="command that repairs a PR, fed a prompt on stdin",
+    )
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--json", dest="as_json", action="store_true")
     args = parser.parse_args(argv)
@@ -749,13 +928,19 @@ def main(argv=None) -> int:
     # Loaded even for a single repository: its `bots` is the default allowlist for every policy.
     operator_path = default_operator_path()
     try:
-        operator = Operator.load(operator_path) if args.fleet or os.path.exists(operator_path) else Operator()
+        operator = (
+            Operator.load(operator_path)
+            if args.fleet or os.path.exists(operator_path)
+            else Operator()
+        )
     except (OSError, ValueError) as err:
         print(f"pr-autopilot: {operator_path}: {err}", file=sys.stderr)
         return 1
     if args.preset and args.preset not in operator.presets:
-        print(f"pr-autopilot: {operator_path}: no preset {args.preset!r}; known: {sorted(operator.presets)}",
-              file=sys.stderr)
+        print(
+            f"pr-autopilot: {operator_path}: no preset {args.preset!r}; known: {sorted(operator.presets)}",
+            file=sys.stderr,
+        )
         return 1
 
     if args.fleet:
@@ -775,8 +960,10 @@ def main(argv=None) -> int:
         try:
             policy = resolve_policy(repo, operator, args.config, args.preset)
         except PolicyMissing:
-            print(f"{repo}: no {POLICY_PATH}; pass --preset/--config, add a [repos] entry, or set default; skipping",
-                  file=sys.stderr)
+            print(
+                f"{repo}: no {POLICY_PATH}; pass --preset/--config, add a [repos] entry, or set default; skipping",
+                file=sys.stderr,
+            )
             continue
         except (GhError, ValueError, OSError) as err:
             print(f"pr-autopilot: {repo}: {err}", file=sys.stderr)
