@@ -24,6 +24,7 @@ gh pr view <number> --repo <owner/repo> \
 | `airgradient-exporter-56-action-major.json` | Zebradil/airgradient-exporter | #56 | GitHub Action major bump, all green, 5 checks |
 | `powerline-taskwarrior-107-python-major.json` | Zebradil/powerline-taskwarrior | #107 | Python dep major; green `CheckRun`s plus a failing `StatusContext` (`renovate/artifacts`) — overall not mergeable |
 | `tree-sitter-test_highlights-1-onboarding.json` | Zebradil/tree-sitter-test_highlights | #1 | Renovate onboarding PR — no dependency table, `<!--renovate-config-hash:...-->` marker instead of `renovate-debug` |
+| `pr-autopilot-8-pin-digest.json` | Zebradil/pr-autopilot | #8 | Digest pin — `Update` cell is `pinDigest`, `Change` has no current version (` → `fbc6f39``) |
 
 ## Shapes a parser must handle
 
