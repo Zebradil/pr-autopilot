@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/Zebradil/pr-autopilot/compare/v1.0.2...v1.1.0) (2026-09-21)
+
+
+### Features
+
+* configuration presets ([bcdadbd](https://github.com/Zebradil/pr-autopilot/commit/bcdadbd034598057856159e74f5f3b35acfc15af))
+
 ## [1.0.2](https://github.com/Zebradil/pr-autopilot/compare/v1.0.1...v1.0.2) (2026-09-21)
 
 
