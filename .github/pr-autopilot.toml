@@ -1,0 +1,30 @@
+enabled = true
+
+# Documentation only — the engine never reads this table (ADR 0012). It records what onboarding
+# concluded about the repository, and why the policy below looks the way it does.
+[risk]
+# Releases reach consumers only through a human-merged release PR; the engine ignores those
+# (their author is not an allowlisted bot).
+release_mode      = "release-please"
+deploys_from_main = false
+# Unit tests cover the engine, which is stdlib-only. Of the dependencies (all GitHub Actions), only
+# actions/checkout is exercised; a broken create-github-app-token in action.yml would pass CI and
+# ship to every governed repository with the next release.
+test_confidence   = "low"
+criticality       = "normal"
+
+[policy]
+patch    = "merge"
+minor    = "escalate"
+major    = "escalate"
+digest   = "merge"
+pin      = "merge"
+
+[limits]
+max_merges    = 10
+max_repairs   = 3
+attempt_cap   = 2
+lease_minutes = 30
+
+[repair]
+strategy = "bot-branch"
