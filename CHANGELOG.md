@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.2](https://github.com/Zebradil/pr-autopilot/compare/v1.0.1...v1.0.2) (2026-09-21)
+
+
+### Bug Fixes
+
+* classify Renovate pinDigest updates as pin ([#12](https://github.com/Zebradil/pr-autopilot/issues/12)) ([2b4fc10](https://github.com/Zebradil/pr-autopilot/commit/2b4fc107ea6ea85c436fcd2d6c06da676e25630f))
+
 ## [1.0.1](https://github.com/Zebradil/pr-autopilot/compare/v1.0.0...v1.0.1) (2026-09-21)
 
 
