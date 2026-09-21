@@ -28,6 +28,11 @@ Deterministic, do these first:
   means `merge` verdicts will stall no matter how good the policy is.
 - Bot configuration in reach: `renovate.json`, `.github/renovate.json5`, `.github/dependabot.yml`.
 - Existing checks: what the CI actually runs, and on which events.
+- Vacuous green: for each class of file the bot updates (list the files of the open bot PRs with
+  `gh pr view --json files`), name the check that does real work when only those files change. A check that is
+  green because its path filter, discovery step or `when_modified` glob selected nothing is not a check. Typical
+  miss: a toolchain pin (`.terraform-version`, `.mise.toml`, the `terraform_version` fields of `atlantis.yaml`)
+  that no project directory contains, so neither CI nor the plan bot runs anything.
 
 Then judge, with evidence you can quote:
 
