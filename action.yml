@@ -1,0 +1,45 @@
+name: pr-autopilot
+description: Triage automated dependency-update pull requests against the repository's pr-autopilot policy.
+
+inputs:
+  pull-request:
+    description: Pull request number to triage. Empty sweeps every open bot pull request.
+    default: ""
+  dry-run:
+    description: Show verdicts without acting.
+    default: "false"
+  client-id:
+    description: >-
+      GitHub App client ID (the documented identity). Empty falls back to the token input. Creating the App and the
+      permissions it needs: docs/manual.md, "Identity".
+    default: ""
+  app-private-key:
+    description: GitHub App private key.
+    default: ""
+  token:
+    description: >-
+      Fallback identity, used when client-id is empty. It must be able to approve pull requests, which the built-in
+      GITHUB_TOKEN usually cannot.
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Mint a GitHub App installation token
+      id: app-token
+      if: inputs.client-id != ''
+      uses: actions/create-github-app-token@v2
+      with:
+        client-id: ${{ inputs.client-id }}
+        private-key: ${{ inputs.app-private-key }}
+    - name: Sweep
+      shell: bash
+      env:
+        GH_TOKEN: ${{ steps.app-token.outputs.token || inputs.token }}
+        PULL_REQUEST: ${{ inputs.pull-request }}
+        DRY_RUN: ${{ inputs.dry-run }}
+      run: |
+        args=(sweep --repo "$GITHUB_REPOSITORY")
+        [[ -n $PULL_REQUEST ]] && args+=("$PULL_REQUEST")
+        [[ $DRY_RUN == true ]] && args+=(--dry-run)
+        python3 "$GITHUB_ACTION_PATH/pr_autopilot.py" "${args[@]}"

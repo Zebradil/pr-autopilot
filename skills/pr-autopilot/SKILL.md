@@ -51,7 +51,10 @@ autopilot is only a reporting tool until the checks improve. Loosen only when th
 
 - `.github/pr-autopilot.toml` — from `templates/pr-autopilot.toml`, with the `[risk]` block filled in as the
   record of what you concluded.
-- `.github/workflows/pr-autopilot-sweep.yml` (and the reactive one if the operator wants minute-latency merges).
+- `.github/workflows/pr-autopilot-sweep.yml` (and the reactive one if the operator wants minute-latency merges),
+  copied from `templates/workflows/`. They are thin callers of the `Zebradil/pr-autopilot` action, pinned to a
+  release; Renovate bumps the pin like any other action. Drop the `# x-release-please-version` marker, which only
+  means something in this repository. `runs-on` is the operator's choice; the templates default to `ubuntu-slim`.
 - Renovate metadata, if `renovate.json` is in reach — this is what makes update classes reliable (ADR 0007):
 
   ```json

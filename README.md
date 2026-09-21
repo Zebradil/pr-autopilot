@@ -53,8 +53,8 @@ Policy lives in the repository it governs, at `.github/pr-autopilot.toml`
 
 ## Roadmap
 
-Done: engine core (facts, verdicts, merging, limits, sticky state, `--dry-run`), workflow templates, repair
-dispatch and the agent contract, the onboarding skill.
+Done: engine core (facts, verdicts, merging, limits, sticky state, `--dry-run`), the `pr-autopilot` action with caller
+workflow templates, releases, repair dispatch and the agent contract, the onboarding skill.
 
 Next: run it on personal repositories for a while; gates, including the Atlantis plan-is-empty case;
 policy-bought advisory reviews; a fixture for pending checks (none existed when the fixtures were captured).

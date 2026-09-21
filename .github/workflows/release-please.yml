@@ -1,0 +1,32 @@
+name: release-please
+
+# The release PR is opened with a GitHub App token: this repository disallows GITHUB_TOKEN from
+# creating pull requests, and a GITHUB_TOKEN-created PR would not fire `pull_request` events, so
+# tests would never run on the release PR — the one that rewrites the version pin in the templates.
+
+on:
+  push:
+    branches: [main]
+  # release-please only compares an open release PR's title and body, so it will not pick up a
+  # config change on its own. Closing the PR and dispatching this rebuilds it.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release-please:
+    runs-on: ubuntu-slim
+    steps:
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.CI_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CI_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ steps.app-token.outputs.token }}

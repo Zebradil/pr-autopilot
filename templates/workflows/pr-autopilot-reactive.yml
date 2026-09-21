@@ -18,25 +18,13 @@ jobs:
     # Checks are usually still running at this point; the engine will say "wait" and the
     # scheduled sweep picks it up. Reacting here is what makes a green PR merge within minutes.
     if: endsWith(github.event.pull_request.user.login, '[bot]')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     steps:
-      - name: Mint a GitHub App installation token
-        # Set the PR_AUTOPILOT_CLIENT_ID repository variable to use a GitHub App (the documented
-        # identity). Leave it unset to fall back to the PR_AUTOPILOT_TOKEN secret. Creating the
-        # App and the permissions it needs: docs/manual.md, "Identity".
-        id: app-token
-        if: vars.PR_AUTOPILOT_CLIENT_ID != ''
-        uses: actions/create-github-app-token@v2
+      - uses: Zebradil/pr-autopilot@v1.0.0 # x-release-please-version
         with:
+          pull-request: ${{ github.event.pull_request.number }}
+          # Set the PR_AUTOPILOT_CLIENT_ID variable to act as a GitHub App (the documented identity), or leave it
+          # unset to fall back to the PR_AUTOPILOT_TOKEN secret. See docs/manual.md, "Identity".
           client-id: ${{ vars.PR_AUTOPILOT_CLIENT_ID }}
-          private-key: ${{ secrets.PR_AUTOPILOT_APP_PRIVATE_KEY }}
-      - name: Fetch the engine
-        run: |
-          curl -fsSL -o pr_autopilot.py \
-            https://raw.githubusercontent.com/Zebradil/pr-autopilot/v1/pr_autopilot.py
-      - name: Triage this pull request
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.PR_AUTOPILOT_TOKEN }}
-        run: |
-          python3 pr_autopilot.py sweep ${{ github.event.pull_request.number }} \
-            --repo "$GITHUB_REPOSITORY"
+          app-private-key: ${{ secrets.PR_AUTOPILOT_APP_PRIVATE_KEY }}
+          token: ${{ secrets.PR_AUTOPILOT_TOKEN }}

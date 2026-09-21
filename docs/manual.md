@@ -129,9 +129,9 @@ token. A fine-grained personal access token is the accepted shortcut for persona
 token cannot approve pull requests unless the organisation has enabled that, so repositories whose protection
 requires an approval need an identity of their own.
 
-The workflow templates take either: set the `PR_AUTOPILOT_CLIENT_ID` repository **variable** and the
-`PR_AUTOPILOT_APP_PRIVATE_KEY` secret and they mint an installation token per run, or leave the variable unset and
-they fall back to the `PR_AUTOPILOT_TOKEN` secret.
+The `Zebradil/pr-autopilot` action takes either, and the workflow templates wire both: set the
+`PR_AUTOPILOT_CLIENT_ID` repository **variable** and the `PR_AUTOPILOT_APP_PRIVATE_KEY` secret and it mints an
+installation token per run, or leave the variable unset and it falls back to the `PR_AUTOPILOT_TOKEN` secret.
 
 ### Permissions
 
