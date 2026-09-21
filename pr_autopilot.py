@@ -330,8 +330,11 @@ class Policy:
     lease_minutes: int = 30
 
     @staticmethod
-    def from_toml(raw: bytes) -> "Policy":
-        d = tomllib.loads(raw.decode())
+    def from_toml(raw: bytes, default_bots: tuple[str, ...] = DEFAULT_BOTS) -> "Policy":
+        return Policy.from_dict(tomllib.loads(raw.decode()), default_bots)
+
+    @staticmethod
+    def from_dict(d: dict, default_bots: tuple[str, ...] = DEFAULT_BOTS) -> "Policy":
         table = {k: v for k, v in (d.get("policy") or {}).items() if k in CLASSES}
         extras = {"review_when", "allow_without_checks"}
         unknown = {k for k in (d.get("policy") or {}) if k not in CLASSES and k not in extras}
@@ -343,7 +346,7 @@ class Policy:
         limits = d.get("limits") or {}
         return Policy(
             enabled=d.get("enabled", True),
-            bots=tuple(d.get("bots") or DEFAULT_BOTS),
+            bots=tuple(d.get("bots") or default_bots),
             table=table,
             max_merges=limits.get("max_merges", 10),
             max_repairs=limits.get("max_repairs", 3),
@@ -434,10 +437,65 @@ def gh_json(*args: str):
     return json.loads(gh(*args))
 
 
-def fetch_policy(repo: str, path: str | None) -> Policy:
-    if path:
+@dataclasses.dataclass(frozen=True)
+class Operator:
+    """The operator's own file: bot allowlist, named presets, and the fleet with what governs each repo."""
+    bots: tuple[str, ...] = DEFAULT_BOTS
+    presets: dict = dataclasses.field(default_factory=dict)
+    repos: dict = dataclasses.field(default_factory=dict)  # "owner/name" -> {"preset": ...} | {"policy": ...} | {}
+    base_dir: str = "."
+
+    @staticmethod
+    def load(path: str) -> "Operator":
         with open(path, "rb") as fh:
-            return Policy.from_toml(fh.read())
+            d = tomllib.load(fh)
+        repos = d.get("repos") or {}
+        if isinstance(repos, list):
+            repos = {name: {} for name in repos}
+        for name, entry in repos.items():
+            if not isinstance(entry, dict) or set(entry) - {"preset", "policy"} or len(entry) > 1:
+                raise ValueError(f"repos.{name!r}: want a table with at most one of preset, policy; got {entry!r}")
+        return Operator(
+            bots=tuple(d.get("bots") or DEFAULT_BOTS),
+            presets=d.get("presets") or {},
+            repos=repos,
+            base_dir=os.path.dirname(os.path.abspath(path)),
+        )
+
+    def preset(self, name: str) -> Policy:
+        if name not in self.presets:
+            raise ValueError(f"unknown preset {name!r}; known: {sorted(self.presets)}")
+        return Policy.from_dict(self.presets[name], self.bots)
+
+    def policy_file(self, path: str) -> Policy:
+        with open(os.path.join(self.base_dir, path), "rb") as fh:
+            return Policy.from_toml(fh.read(), self.bots)
+
+
+def default_operator_path() -> str:
+    env = os.environ.get("PR_AUTOPILOT_CONFIG")
+    if env:
+        return env
+    xdg = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+    return os.path.join(xdg, "pr-autopilot", "config.toml")
+
+
+def resolve_policy(repo: str, operator: Operator, config: str | None, preset: str | None) -> Policy:
+    """Explicit CLI choice first, then the operator's entry for the repo, then the in-repo file."""
+    if config:
+        with open(config, "rb") as fh:
+            return Policy.from_toml(fh.read(), operator.bots)
+    if preset:
+        return operator.preset(preset)
+    entry = operator.repos.get(repo) or {}
+    if "policy" in entry:
+        return operator.policy_file(entry["policy"])
+    if "preset" in entry:
+        return operator.preset(entry["preset"])
+    return fetch_policy(repo, operator.bots)
+
+
+def fetch_policy(repo: str, default_bots: tuple[str, ...] = DEFAULT_BOTS) -> Policy:
     try:
         blob = gh_json("api", f"repos/{repo}/contents/{POLICY_PATH}")
     except GhError as err:
@@ -446,7 +504,7 @@ def fetch_policy(repo: str, path: str | None) -> Policy:
         if "404" in str(err) or "Not Found" in str(err):
             raise PolicyMissing(str(err)) from err
         raise
-    return Policy.from_toml(base64.b64decode(blob["content"]))
+    return Policy.from_toml(base64.b64decode(blob["content"]), default_bots)
 
 
 def fetch_pr(repo: str, number: int) -> Facts:
@@ -658,8 +716,11 @@ def main(argv=None) -> int:
     parser.add_argument("command", choices=["sweep", "labels"])
     parser.add_argument("prs", nargs="*", type=int, help="pull request numbers (default: all bot PRs)")
     parser.add_argument("--repo", help="owner/name (default: the repository in the current directory)")
-    parser.add_argument("--fleet", help="TOML file listing repositories to sweep")
+    parser.add_argument("--fleet", action="store_true",
+                        help="sweep every repository in the operator file "
+                             "($PR_AUTOPILOT_CONFIG or ~/.config/pr-autopilot/config.toml)")
     parser.add_argument("--config", help="policy file to use instead of the one in the repository")
+    parser.add_argument("--preset", help="named preset from the operator file to use as the policy")
     parser.add_argument("--agent-command", default=os.environ.get("PR_AUTOPILOT_AGENT", ""),
                         help="command that repairs a PR, fed a prompt on stdin")
     parser.add_argument("--dry-run", action="store_true")
@@ -670,9 +731,20 @@ def main(argv=None) -> int:
         print("pr-autopilot: gh is not installed", file=sys.stderr)
         return 2
 
+    # Loaded even for a single repository: its `bots` is the default allowlist for every policy.
+    operator_path = default_operator_path()
+    try:
+        operator = Operator.load(operator_path) if args.fleet or os.path.exists(operator_path) else Operator()
+    except (OSError, ValueError) as err:
+        print(f"pr-autopilot: {operator_path}: {err}", file=sys.stderr)
+        return 1
+    if args.preset and args.preset not in operator.presets:
+        print(f"pr-autopilot: {operator_path}: no preset {args.preset!r}; known: {sorted(operator.presets)}",
+              file=sys.stderr)
+        return 1
+
     if args.fleet:
-        with open(args.fleet, "rb") as fh:
-            repos = tomllib.load(fh).get("repos", [])
+        repos = list(operator.repos)
     elif args.repo:
         repos = [args.repo]
     else:
@@ -686,9 +758,10 @@ def main(argv=None) -> int:
     results: list[Result] = []
     for repo in repos:
         try:
-            policy = fetch_policy(repo, args.config)
+            policy = resolve_policy(repo, operator, args.config, args.preset)
         except PolicyMissing:
-            print(f"{repo}: no {POLICY_PATH}; skipping", file=sys.stderr)
+            print(f"{repo}: no {POLICY_PATH}; pass --preset/--config or add a [repos] entry; skipping",
+                  file=sys.stderr)
             continue
         except (GhError, ValueError, OSError) as err:
             print(f"pr-autopilot: {repo}: {err}", file=sys.stderr)

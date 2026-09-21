@@ -1,0 +1,32 @@
+# Operator file: $PR_AUTOPILOT_CONFIG, or ~/.config/pr-autopilot/config.toml.
+# Governs repositories that do not (yet) carry .github/pr-autopilot.toml, and lists the fleet
+# a scheduled `pr-autopilot sweep --fleet` covers. Membership is explicit on purpose (ADR 0010).
+
+# Bot logins allowed in every policy that does not name its own. Self-hosted Renovate apps
+# have their own login, for example "acme-renovate".
+bots = ["renovate", "dependabot"]
+
+# A preset is a whole policy body, same shape as .github/pr-autopilot.toml.
+# `pr-autopilot sweep --repo o/r --preset infra --dry-run` tries one on any repository.
+[presets.infra.policy]
+patch    = "merge"
+minor    = "merge"
+major    = "escalate"
+digest   = "merge"
+pin      = "merge"
+lockfile = "merge"
+
+[presets.strict.policy]
+patch    = "merge"
+minor    = "escalate"
+major    = "escalate"
+digest   = "merge"
+pin      = "merge"
+
+# Fleet. Each entry picks what governs the repository: `preset`, a `policy` file relative to this
+# one, or nothing, which reads the repository's own .github/pr-autopilot.toml.
+[repos."Zebradil/sito"]
+[repos."Zebradil/kasha"]
+preset = "infra"
+[repos."Zebradil/tuned"]
+policy = "policies/tuned.toml"

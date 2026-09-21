@@ -85,7 +85,37 @@ All three run the same command.
 - **Scheduled**: a workflow on `schedule`, or a cron entry, sweeping a repository or a fleet.
 - **Reactive**: a workflow on `pull_request` events passing the single pull request number.
 
-The fleet — which repositories a scheduled sweep covers — is an explicit list in the operator's own configuration.
+The fleet — which repositories a scheduled sweep covers — is an explicit list in the operator file.
+
+## Operator file
+
+Lives outside any governed repository: `$PR_AUTOPILOT_CONFIG`, else `$XDG_CONFIG_HOME/pr-autopilot/config.toml`
+(default `~/.config/pr-autopilot/config.toml`). It is read on every sweep when present, since its `bots` is the default
+allowlist, so a malformed file fails every sweep. Template: [`templates/config.toml`](../templates/config.toml).
+
+```toml
+bots = ["acme-renovate"]        # default allowlist for every policy that does not set `bots`
+
+[presets.infra.policy]          # a preset is a whole policy body
+patch = "merge"
+major = "escalate"
+
+[repos."acme/platform"]         # the fleet; each entry says what governs the repository
+preset = "infra"
+[repos."acme/tuned"]
+policy = "policies/tuned.toml"  # relative to the operator file
+[repos."acme/web"]              # nothing: the repository's own .github/pr-autopilot.toml
+```
+
+Presets exist for the stretch between "curious" and "onboarded": one operator can dry-run dozens of repositories
+with a handful of risk profiles and no commit in any of them. Onboarding then writes the chosen body into the
+repository and the entry loses its `preset`.
+
+Resolution for one repository, first match wins: `--config FILE`, `--preset NAME`, the entry's `policy`, the
+entry's `preset`, the in-repo file. A repository with none of these is skipped with a message.
+
+A policy may set its own `bots = [...]`; otherwise the operator file's list applies, and without an operator file
+the default is `renovate` and `dependabot`. Names compare on the bare login (see **Facts**).
 
 ## Facts
 
@@ -230,7 +260,9 @@ verify before relying on it).
 ```bash
 pr_autopilot.py sweep                          # every bot PR in the current repository
 pr_autopilot.py sweep 123 456 --repo o/r       # just these
-pr_autopilot.py sweep --fleet fleet.toml       # a whole fleet
+pr_autopilot.py sweep --fleet                  # every repository in the operator file
+PR_AUTOPILOT_CONFIG=other.toml pr_autopilot.py sweep --fleet  # ... or in this one
+pr_autopilot.py sweep --repo o/r --preset infra  # try a preset on any repository
 pr_autopilot.py sweep --dry-run --json         # verdicts only, machine readable
 pr_autopilot.py sweep --config ./policy.toml   # try a policy before committing it
 pr_autopilot.py labels --repo o/r              # create the five autopilot labels

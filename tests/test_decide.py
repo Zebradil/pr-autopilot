@@ -2,7 +2,9 @@
 
 import contextlib
 import io
+import os
 import sys
+import tempfile
 import unittest
 from unittest import mock
 from datetime import datetime, timedelta, timezone
@@ -11,8 +13,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from pr_autopilot import (  # noqa: E402
-    IGNORE, Facts, GhError, Label, Policy, Result, Upgrade, decide, main, worst,
+    IGNORE, Facts, GhError, Label, Operator, Policy, Result, Upgrade, decide, main, resolve_policy, worst,
 )
+
+# Keeps the developer's own operator file out of every main() call below.
+os.environ["PR_AUTOPILOT_CONFIG"] = os.path.join(tempfile.gettempdir(), "pr-autopilot-tests-absent.toml")
 
 POLICY = Policy(table={"patch": "merge", "minor": "merge", "digest": "merge",
                        "lockfile": "merge", "major": "escalate"})
@@ -140,6 +145,92 @@ class TestPolicyFile(unittest.TestCase):
     def test_reads_limits_and_strategy(self):
         p = Policy.from_toml(b'[policy]\npatch="merge"\n[limits]\nmax_merges=2\n[repair]\nstrategy="side-pr"\n')
         self.assertEqual((p.max_merges, p.repair_strategy, p.for_class("patch")), (2, "side-pr", "merge"))
+
+
+OPERATOR_TOML = b"""
+bots = ["acme-renovate"]
+[presets.infra.policy]
+patch = "merge"
+major = "escalate"
+[presets.strict.policy]
+patch = "escalate"
+[repos."o/preset"]
+preset = "infra"
+[repos."o/tuned"]
+policy = "tuned.toml"
+[repos."o/inrepo"]
+"""
+
+
+class TestOperatorFile(unittest.TestCase):
+    """Presets and per-repo entries let a repository be swept before it carries a policy file."""
+
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.path = os.path.join(self.dir.name, "config.toml")
+        with open(self.path, "wb") as fh:
+            fh.write(OPERATOR_TOML)
+        with open(os.path.join(self.dir.name, "tuned.toml"), "wb") as fh:
+            fh.write(b'bots = ["own-bot"]\n[policy]\nminor = "merge"\n')
+        self.op = Operator.load(self.path)
+
+    def tearDown(self):
+        self.dir.cleanup()
+
+    def test_preset_inherits_operator_bots(self):
+        p = self.op.preset("infra")
+        self.assertEqual((p.bots, p.for_class("patch"), p.for_class("minor")),
+                         (("acme-renovate",), "merge", "escalate"))
+
+    def test_unknown_preset_names_the_known_ones(self):
+        with self.assertRaisesRegex(ValueError, "infra.*strict"):
+            self.op.preset("nope")
+
+    def test_repo_entries_resolve_without_github(self):
+        with mock.patch("pr_autopilot.gh_json", side_effect=AssertionError("no IO expected")):
+            self.assertEqual(resolve_policy("o/preset", self.op, None, None).for_class("patch"), "merge")
+            tuned = resolve_policy("o/tuned", self.op, None, None)
+        self.assertEqual((tuned.bots, tuned.for_class("minor")), (("own-bot",), "merge"))
+
+    def test_cli_preset_beats_repo_entry_and_bare_entry_reads_repo(self):
+        self.assertEqual(resolve_policy("o/preset", self.op, None, "strict").for_class("patch"), "escalate")
+        with mock.patch("pr_autopilot.fetch_policy", return_value=POLICY) as fetch:
+            resolve_policy("o/inrepo", self.op, None, None)
+        fetch.assert_called_once_with("o/inrepo", ("acme-renovate",))
+
+    def test_legacy_repo_list(self):
+        with open(self.path, "wb") as fh:
+            fh.write(b'repos = ["a/b", "c/d"]\n')
+        self.assertEqual(list(Operator.load(self.path).repos), ["a/b", "c/d"])
+
+    def test_malformed_repo_entries_are_rejected(self):
+        for body in (b'repos = {"a/b" = "infra"}\n',
+                     b'[repos."a/b"]\npresets = "infra"\n',
+                     b'[repos."a/b"]\npreset = "infra"\npolicy = "x.toml"\n'):
+            with self.subTest(body=body):
+                with open(self.path, "wb") as fh:
+                    fh.write(body)
+                with self.assertRaisesRegex(ValueError, "a/b"):
+                    Operator.load(self.path)
+
+    def test_fleet_sweeps_every_repo_in_the_env_operator_file(self):
+        with mock.patch.dict(os.environ, {"PR_AUTOPILOT_CONFIG": self.path}), \
+             mock.patch("pr_autopilot.shutil.which", return_value="/usr/bin/gh"), \
+             mock.patch("pr_autopilot.fetch_policy", return_value=POLICY), \
+             mock.patch("pr_autopilot.list_bot_prs", return_value=[]), \
+             mock.patch("pr_autopilot.sweep_repo", return_value=[]) as sweep, \
+             contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(main(["sweep", "--fleet", "--dry-run"]), 0)
+        self.assertEqual([c.args[0] for c in sweep.call_args_list], ["o/preset", "o/tuned", "o/inrepo"])
+
+    def test_unknown_cli_preset_fails_before_sweeping(self):
+        with mock.patch.dict(os.environ, {"PR_AUTOPILOT_CONFIG": self.path}), \
+             mock.patch("pr_autopilot.shutil.which", return_value="/usr/bin/gh"), \
+             mock.patch("pr_autopilot.sweep_repo") as sweep, \
+             contextlib.redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(main(["sweep", "--repo", "o/r", "--preset", "nope"]), 1)
+        sweep.assert_not_called()
+        self.assertIn("infra", err.getvalue())
 
 
 class TestExitCode(unittest.TestCase):
