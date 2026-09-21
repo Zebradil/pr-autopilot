@@ -6,7 +6,7 @@ Capture command (fields are load-bearing — keep the list in sync):
 
 ```bash
 gh pr view <number> --repo <owner/repo> \
-  --json number,title,author,body,labels,state,isDraft,mergeable,mergeStateStatus,statusCheckRollup,headRefName,url,comments \
+  --json number,title,author,body,labels,state,isDraft,mergeable,mergeStateStatus,statusCheckRollup,headRefName,url,comments,files \
   > tests/fixtures/<slug>.json
 ```
 
@@ -37,3 +37,4 @@ gh pr view <number> --repo <owner/repo> \
 - `statusCheckRollup` mixes two types: `CheckRun` (`status`/`conclusion`/`name`) and `StatusContext` (`state`/`context`, **no** `status` or `conclusion`).
 - `author` is `{"is_bot": true, "login": "app/renovate"}`, but `comments[].author` is `{"login": "renovate"}` with no `is_bot`.
 - `mergeable` can be `UNKNOWN` while GitHub computes it; re-reading later yields the real value.
+- A home-grown updater (`nix flake update` in CI) writes free prose and no table; only `files` says what moved.

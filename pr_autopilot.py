@@ -31,7 +31,7 @@ DEFAULT_BOTS = ("renovate", "dependabot")
 
 PR_FIELDS = (
     "number,title,author,body,labels,state,isDraft,mergeable,mergeStateStatus,"
-    "statusCheckRollup,headRefName,url,comments"
+    "statusCheckRollup,headRefName,url,comments,files"
 )
 
 FAILING_CONCLUSIONS = {
@@ -47,6 +47,15 @@ PENDING_STATES = {"PENDING", "EXPECTED"}
 # Update classes a policy table can name. "unknown" is what we emit when the bot did not tell us
 # and the body could not be parsed; it is deliberately not mergeable by default.
 CLASSES = ("patch", "minor", "major", "digest", "pin", "lockfile", "unknown")
+
+# A pull request that touches only these files is lock-file maintenance whatever its body says,
+# which is how Renovate itself defines the class. Read only when the body names no upgrade.
+LOCK_FILES = frozenset({
+    "flake.lock", "Cargo.lock", "package-lock.json", "npm-shrinkwrap.json", "yarn.lock",
+    "pnpm-lock.yaml", "bun.lockb", "bun.lock", "poetry.lock", "uv.lock", "Pipfile.lock",
+    "pdm.lock", "go.sum", "Gemfile.lock", "composer.lock", "mix.lock", "gradle.lockfile",
+    "Package.resolved", "Podfile.lock", "pubspec.lock", "packages.lock.json", "deno.lock",
+})
 
 
 # --- verdicts ---------------------------------------------------------------------------------
@@ -151,11 +160,12 @@ def check_lists(rollup) -> tuple[list[str], list[str]]:
     return failing, pending
 
 
-def parse_upgrades(body: str) -> list[Upgrade]:
-    """Upgrades from the bot's own metadata, falling back to its PR body table.
+def parse_upgrades(body: str, files: tuple[str, ...] = ()) -> list[Upgrade]:
+    """Upgrades from the bot's own metadata, falling back to its PR body table, then to the diff.
 
     ADR 0007: we never infer an update class from prose. The JSON marker is what onboarding asks
-    Renovate to emit; the table is the fallback for bots we cannot configure. Anything else is
+    Renovate to emit; the table is the fallback for bots we cannot configure. A body that names
+    nothing but a diff made only of lock files is lock-file maintenance. Anything else is
     reported as "unknown", which policy treats conservatively.
     """
     body = body or ""
@@ -173,7 +183,10 @@ def parse_upgrades(body: str) -> list[Upgrade]:
             ]
         except (json.JSONDecodeError, AttributeError):
             pass
-    return parse_body_table(body) or parse_dependabot(body)
+    upgrades = parse_body_table(body) or parse_dependabot(body)
+    if not upgrades and files and all(os.path.basename(f) in LOCK_FILES for f in files):
+        upgrades = [Upgrade(name=f, update_class="lockfile") for f in files]
+    return upgrades
 
 
 def normalise_class(raw: str) -> str:
@@ -340,7 +353,11 @@ def facts_from_json(repo: str, pr: dict) -> Facts:
         mergeable=pr.get("mergeable", ""),
         merge_state=pr.get("mergeStateStatus", ""),
         labels=frozenset(l["name"] for l in pr.get("labels") or []),
-        upgrades=tuple(parse_upgrades(pr.get("body", ""))),
+        upgrades=tuple(
+            parse_upgrades(
+                pr.get("body", ""), tuple(f["path"] for f in pr.get("files") or [])
+            )
+        ),
         checks_failing=tuple(failing),
         checks_pending=tuple(pending),
         checks_total=len(pr.get("statusCheckRollup") or []),
@@ -369,6 +386,10 @@ class Policy:
 
     @staticmethod
     def from_dict(d: dict, default_bots: tuple[str, ...] = DEFAULT_BOTS) -> "Policy":
+        if "policy" not in d:
+            raise ValueError(
+                "no [policy] table; an operator file goes in --config or $PR_AUTOPILOT_CONFIG"
+            )
         table = {k: v for k, v in (d.get("policy") or {}).items() if k in CLASSES}
         extras = {"review_when", "allow_without_checks"}
         unknown = {
@@ -544,11 +565,11 @@ def default_operator_path() -> str:
 
 
 def resolve_policy(
-    repo: str, operator: Operator, config: str | None, preset: str | None
+    repo: str, operator: Operator, policy_file: str | None, preset: str | None
 ) -> Policy:
     """Explicit CLI choice first, then the operator's entry for the repo, the in-repo file, the operator's default."""
-    if config:
-        with open(config, "rb") as fh:
+    if policy_file:
+        with open(policy_file, "rb") as fh:
             return Policy.from_toml(fh.read(), operator.bots)
     if preset:
         return operator.preset(preset)
@@ -907,7 +928,11 @@ def main(argv=None) -> int:
         "($PR_AUTOPILOT_CONFIG or ~/.config/pr-autopilot/config.toml)",
     )
     parser.add_argument(
-        "--config", help="policy file to use instead of the one in the repository"
+        "--config",
+        help="operator file (default: $PR_AUTOPILOT_CONFIG or ~/.config/pr-autopilot/config.toml)",
+    )
+    parser.add_argument(
+        "--policy", help="policy file to use instead of the one in the repository"
     )
     parser.add_argument(
         "--preset", help="named preset from the operator file to use as the policy"
@@ -926,11 +951,11 @@ def main(argv=None) -> int:
         return 2
 
     # Loaded even for a single repository: its `bots` is the default allowlist for every policy.
-    operator_path = default_operator_path()
+    operator_path = args.config or default_operator_path()
     try:
         operator = (
             Operator.load(operator_path)
-            if args.fleet or os.path.exists(operator_path)
+            if args.config or args.fleet or os.path.exists(operator_path)
             else Operator()
         )
     except (OSError, ValueError) as err:
@@ -958,10 +983,10 @@ def main(argv=None) -> int:
     results: list[Result] = []
     for repo in repos:
         try:
-            policy = resolve_policy(repo, operator, args.config, args.preset)
+            policy = resolve_policy(repo, operator, args.policy, args.preset)
         except PolicyMissing:
             print(
-                f"{repo}: no {POLICY_PATH}; pass --preset/--config, add a [repos] entry, or set default; skipping",
+                f"{repo}: no {POLICY_PATH}; pass --preset/--policy, add a [repos] entry, or set default; skipping",
                 file=sys.stderr,
             )
             continue

@@ -95,7 +95,7 @@ because `GITHUB_TOKEN` cannot approve. The steps for creating the App and the pe
 
 ### 4. Verify
 
-`pr_autopilot.py sweep --repo <owner/repo> --config .github/pr-autopilot.toml --dry-run` and read the verdict
+`pr_autopilot.py sweep --repo <owner/repo> --policy .github/pr-autopilot.toml --dry-run` and read the verdict
 table with the operator. If a pull request you would have merged by hand shows `escalate`, the policy is wrong or
 the metadata is missing — fix it now, not after the first surprise.
 

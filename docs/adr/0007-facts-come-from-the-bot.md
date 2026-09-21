@@ -19,3 +19,11 @@ Where the class is not stated, the engine derives it by comparing the two versio
 data the bot printed, not interpretation of English. Anything the comparison cannot read confidently — a downgrade,
 a digest it cannot recognise, a missing side — comes back `unknown`, which policy treats conservatively. A `0.x`
 minor bump is classified `major`, because in most ecosystems that is what it means.
+
+## Addendum: the diff is a fact too
+
+Home-grown updaters — a CI job running `nix flake update` or `npm update` — write free prose and no table, so
+every step above yields nothing. When the body names no upgrade and every changed file is a known lock file, the
+engine classifies the pull request `lockfile`. The file list is data GitHub reports about the change, not
+interpretation of English, and "only lock files moved" is Renovate's own definition of lock-file maintenance.
+The fallback never overrides a class the bot stated, and one non-lock file in the diff keeps `unknown`.

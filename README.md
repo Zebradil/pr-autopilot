@@ -44,8 +44,9 @@ The same skill investigates escalated pull requests: "Investigate why PR #123 wa
 ```bash
 pr_autopilot.py sweep --dry-run                  # verdicts for every open bot PR here, act on nothing
 pr_autopilot.py sweep 123 456 --repo owner/name  # only these PRs
-pr_autopilot.py sweep --config ./policy.toml     # try a policy before committing it
+pr_autopilot.py sweep --policy ./policy.toml     # try a policy before committing it
 pr_autopilot.py sweep --preset infra --repo o/n  # try a preset from ~/.config/pr-autopilot/config.toml
+pr_autopilot.py sweep --config ./ops.toml --fleet # operator file other than the default
 pr_autopilot.py sweep --fleet                    # every repository in that file
 pr_autopilot.py labels --repo owner/name         # create the autopilot labels
 ```

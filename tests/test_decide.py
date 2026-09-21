@@ -14,8 +14,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from pr_autopilot import (  # noqa: E402
-    IGNORE, Facts, GhError, Label, Operator, Policy, PolicyMissing, Result, Upgrade, decide, main, resolve_policy,
-    worst,
+    IGNORE, Facts, GhError, Label, Operator, Policy, PolicyMissing, Result, Upgrade, decide, main, parse_upgrades,
+    resolve_policy, worst,
 )
 
 # Keeps the developer's own operator file out of every main() call below.
@@ -135,7 +135,30 @@ class TestOrdering(unittest.TestCase):
                              key=["merge", "gate", "wait", "repair", "escalate", "hold"].index))
 
 
+class TestParseUpgrades(unittest.TestCase):
+    """The diff is the fallback of last resort: only when the body names no upgrade."""
+
+    def test_lock_file_only_diff_is_lockfile(self):
+        got = parse_upgrades("Automated `nix flake update` run.", ("flake.lock",))
+        self.assertEqual([(u.name, u.update_class) for u in got], [("flake.lock", "lockfile")])
+
+    def test_lock_file_in_subdirectory_counts(self):
+        self.assertEqual(parse_upgrades("", ("web/package-lock.json", "api/Cargo.lock"))[0].update_class, "lockfile")
+
+    def test_any_other_file_keeps_unknown(self):
+        self.assertEqual(parse_upgrades("", ("flake.lock", "flake.nix")), [])
+        self.assertEqual(parse_upgrades("", ()), [])
+
+    def test_body_wins_over_diff(self):
+        body = "| Package | Update | Change |\n|---|---|---|\n| x | major | `1.0.0` -> `2.0.0` |\n"
+        self.assertEqual(parse_upgrades(body, ("flake.lock",))[0].update_class, "major")
+
+
 class TestPolicyFile(unittest.TestCase):
+    def test_rejects_document_without_policy_table(self):
+        with self.assertRaisesRegex(ValueError, "operator file"):
+            Policy.from_toml(OPERATOR_TOML)
+
     def test_rejects_unknown_verdict(self):
         with self.assertRaises(ValueError):
             Policy.from_toml(b'[policy]\npatch = "yolo"\n')

@@ -89,8 +89,8 @@ The fleet — which repositories a scheduled sweep covers — is an explicit lis
 
 ## Operator file
 
-Lives outside any governed repository: `$PR_AUTOPILOT_CONFIG`, else `$XDG_CONFIG_HOME/pr-autopilot/config.toml`
-(default `~/.config/pr-autopilot/config.toml`). It is read on every sweep when present, since its `bots` is the default
+Lives outside any governed repository: `--config FILE`, else `$PR_AUTOPILOT_CONFIG`, else
+`$XDG_CONFIG_HOME/pr-autopilot/config.toml` (default `~/.config/pr-autopilot/config.toml`). It is read on every sweep when present, since its `bots` is the default
 allowlist, so a malformed file fails every sweep. Template: [`templates/config.toml`](../templates/config.toml).
 
 ```toml
@@ -112,7 +112,7 @@ Presets exist for the stretch between "curious" and "onboarded": one operator ca
 with a handful of risk profiles and no commit in any of them. Onboarding then writes the chosen body into the
 repository and the entry loses its `preset`.
 
-Resolution for one repository, first match wins: `--config FILE`, `--preset NAME`, the entry's `policy`, the
+Resolution for one repository, first match wins: `--policy FILE`, `--preset NAME`, the entry's `policy`, the
 entry's `preset`, the in-repo file, the operator file's `default`. A repository with none of these is skipped with a
 message. `default` applies to real runs too, so setting it is the operator's opt-in for every repository swept.
 
@@ -127,6 +127,9 @@ Update class comes from the bot, not from prose, in this order:
 2. The update-class column of the bot's own table, whichever of the four known layouts it uses.
 3. Version arithmetic over the two versions the bot printed. A `0.x` minor bump counts as major; a downgrade, an
    unreadable version or a missing side counts as `unknown`.
+4. The diff, only when the body names no upgrade at all: a pull request whose changed files are all lock files
+   (`flake.lock`, `package-lock.json`, `Cargo.lock`, `poetry.lock`, `uv.lock`, `go.sum`, …) is `lockfile`. This is
+   how a home-grown `nix flake update` or `npm update` job gets a class without a Renovate body.
 
 `unknown` has no entry in the default policy table, so it escalates. Nothing reads release notes in steady state.
 
@@ -263,10 +266,10 @@ verify before relying on it).
 pr_autopilot.py sweep                          # every bot PR in the current repository
 pr_autopilot.py sweep 123 456 --repo o/r       # just these
 pr_autopilot.py sweep --fleet                  # every repository in the operator file
-PR_AUTOPILOT_CONFIG=other.toml pr_autopilot.py sweep --fleet  # ... or in this one
+pr_autopilot.py sweep --fleet --config other.toml  # ... or in this operator file
 pr_autopilot.py sweep --repo o/r --preset infra  # try a preset on any repository
 pr_autopilot.py sweep --dry-run --json         # verdicts only, machine readable
-pr_autopilot.py sweep --config ./policy.toml   # try a policy before committing it
+pr_autopilot.py sweep --policy ./policy.toml   # try a policy before committing it
 pr_autopilot.py labels --repo o/r              # create the five autopilot labels
 ```
 
