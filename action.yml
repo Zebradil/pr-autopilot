@@ -4,23 +4,23 @@ description: Triage automated dependency-update pull requests against the reposi
 inputs:
   pull-request:
     description: Pull request number to triage. Empty sweeps every open bot pull request.
-    default: ""
+    default: ''
   dry-run:
     description: Show verdicts without acting.
-    default: "false"
+    default: 'false'
   client-id:
     description: >-
       GitHub App client ID (the documented identity). Empty falls back to the token input. Creating the App and the
       permissions it needs: docs/manual.md, "Identity".
-    default: ""
+    default: ''
   app-private-key:
     description: GitHub App private key.
-    default: ""
+    default: ''
   token:
     description: >-
       Fallback identity, used when client-id is empty. It must be able to approve pull requests, which the built-in
       GITHUB_TOKEN usually cannot.
-    default: ""
+    default: ''
 
 runs:
   using: composite
@@ -28,7 +28,7 @@ runs:
     - name: Mint a GitHub App installation token
       id: app-token
       if: inputs.client-id != ''
-      uses: actions/create-github-app-token@v2
+      uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
       with:
         client-id: ${{ inputs.client-id }}
         private-key: ${{ inputs.app-private-key }}
