@@ -21,6 +21,8 @@ import time
 import tomllib
 from datetime import datetime, timedelta, timezone
 
+__version__ = "1.2.0"  # x-release-please-version
+
 POLICY_PATH = ".github/pr-autopilot.toml"
 STATE_MARKER = "pr-autopilot:state"
 UPGRADES_MARKER = "pr-autopilot:upgrades"
@@ -725,6 +727,7 @@ def create_labels(repo: str, dry_run: bool) -> None:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="pr-autopilot", description=__doc__)
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument("command", choices=["sweep", "labels"])
     parser.add_argument("prs", nargs="*", type=int, help="pull request numbers (default: all bot PRs)")
     parser.add_argument("--repo", help="owner/name (default: the repository in the current directory)")

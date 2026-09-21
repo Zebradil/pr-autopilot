@@ -5,6 +5,7 @@
   "packages": {
     ".": {
       "extra-files": [
+        "pr_autopilot.py",
         "templates/workflows/pr-autopilot-sweep.yml",
         "templates/workflows/pr-autopilot-reactive.yml"
       ]
