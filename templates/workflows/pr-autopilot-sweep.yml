@@ -3,7 +3,7 @@ name: pr-autopilot sweep
 
 on:
   schedule:
-    - cron: "17 6 * * *"
+    - cron: '17 6 * * *'
   workflow_dispatch:
     inputs:
       dry_run:
@@ -25,7 +25,7 @@ jobs:
     steps:
       - uses: Zebradil/pr-autopilot@v1.0.0 # x-release-please-version
         with:
-          dry-run: ${{ inputs.dry_run || false }}
+          dry-run: ${{ inputs.dry_run }}
           # Set the PR_AUTOPILOT_CLIENT_ID variable to act as a GitHub App (the documented identity), or leave it
           # unset to fall back to the PR_AUTOPILOT_TOKEN secret. See docs/manual.md, "Identity".
           client-id: ${{ vars.PR_AUTOPILOT_CLIENT_ID }}
