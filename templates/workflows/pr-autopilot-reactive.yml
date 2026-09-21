@@ -20,7 +20,7 @@ jobs:
     if: endsWith(github.event.pull_request.user.login, '[bot]')
     runs-on: ubuntu-slim
     steps:
-      - uses: Zebradil/pr-autopilot@v1.1.0 # x-release-please-version
+      - uses: Zebradil/pr-autopilot@v1.2.0 # x-release-please-version
         with:
           pull-request: ${{ github.event.pull_request.number }}
           # Set the PR_AUTOPILOT_CLIENT_ID variable to act as a GitHub App (the documented identity), or leave it
