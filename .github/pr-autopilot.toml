@@ -7,15 +7,14 @@ enabled = true
 # (their author is not an allowlisted bot).
 release_mode      = "release-please"
 deploys_from_main = false
-# Unit tests cover the engine, which is stdlib-only. Of the dependencies (all GitHub Actions), only
-# actions/checkout is exercised; a broken create-github-app-token in action.yml would pass CI and
-# ship to every governed repository with the next release.
-test_confidence   = "low"
+# Unit tests cover the engine, which is stdlib-only; the `action` job runs action.yml end to end.
+# release-please-action is not exercised, but a broken bump only stalls releases, visibly.
+test_confidence   = "high"
 criticality       = "normal"
 
 [policy]
 patch    = "merge"
-minor    = "escalate"
+minor    = "merge"
 major    = "escalate"
 digest   = "merge"
 pin      = "merge"

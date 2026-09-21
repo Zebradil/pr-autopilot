@@ -6,3 +6,16 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - run: python3 -m unittest discover -s tests -p 'test_*.py' -v
+
+  action:
+    # Runs action.yml end to end, so a broken bump of an action it uses fails here instead of in
+    # every governed repository after the next release. Secrets are unavailable to fork PRs.
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-slim
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./
+        with:
+          dry-run: 'true'
+          client-id: ${{ vars.CI_APP_CLIENT_ID }}
+          app-private-key: ${{ secrets.CI_APP_PRIVATE_KEY }}
