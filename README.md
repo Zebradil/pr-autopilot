@@ -1,60 +1,65 @@
 # pr-autopilot
 
-Unattended triage of automated dependency-update pull requests across repositories with different risk profiles.
+Unattended triage of Renovate and Dependabot pull requests, driven by a per-repository policy.
 
-Renovate opens a lot of pull requests. Most of them are safe and boring, a few are not, and telling the two apart by
-hand does not scale past a handful of repositories. pr-autopilot decides what happens to each one from a policy you
-wrote once per repository, merges what policy says to merge, and spends an AI agent only where code genuinely cannot
-help: fixing a broken update, or investigating one before handing it to a human.
+A deterministic engine reads each bot pull request (which packages move, how far, what the checks say), looks the
+result up in the repository's policy table, and acts on the verdict:
 
-**Status: the engine works.** Sweeps, verdicts, merging, labels, sticky state and agent dispatch are implemented and
-tested against recorded payloads from real Renovate and Dependabot pull requests. Onboarding is a skill an agent
-runs; gates and advisory reviews are not built yet. Decisions are recorded in [`docs/adr/`](./docs/adr/), vocabulary
-in [`CONTEXT.md`](./CONTEXT.md), operation in [`docs/manual.md`](./docs/manual.md).
+| Verdict    | Action                                                  |
+| ---------- | ------------------------------------------------------- |
+| `merge`    | approve, merge, delete branch                           |
+| `gate`     | trigger a gate, re-evaluate next sweep *(planned)*      |
+| `wait`     | nothing; checks pending, retry next sweep               |
+| `repair`   | dispatch an agent to fix the failing update             |
+| `escalate` | comment with findings, label, stop; a human takes over  |
+| `hold`     | nothing, ever, until the label is removed               |
 
-## How it works
-
-A deterministic engine does the deciding. For each bot pull request it gathers facts — which packages move, from
-which version to which, what the checks say — and looks the result up in the repository's policy table to produce one
-verdict: `merge`, `gate`, `wait`, `repair`, `escalate` or `hold`. Then it acts: approve and merge, wait for checks,
-dispatch an agent, or escalate to a human with a comment and a label.
-
-Three properties are load-bearing:
+## Design guarantees
 
 - **No model decides a merge.** Verdicts come from a lookup table ([ADR 0001](./docs/adr/0001-code-owns-the-verdict.md)).
-- **An agent can only make a verdict more conservative**, never more permissive, and it never touches GitHub state
-  itself ([ADR 0006](./docs/adr/0006-agents-can-only-tighten-a-verdict.md),
-  [ADR 0011](./docs/adr/0011-the-engine-owns-github-state.md)). The worst case of a bad model call is a pull request
-  that stays open a day longer.
-- **Reasoning is spent at onboarding, not per pull request.** A capable model studies the repository once, writes the
-  policy, and proposes the missing checks that would let the autopilot trust it
-  ([ADR 0009](./docs/adr/0009-onboarding-is-where-reasoning-is-spent.md),
-  [ADR 0008](./docs/adr/0008-checks-are-the-contract.md)).
+- **Agents only tighten.** An agent can make a verdict more conservative, never more permissive, and never touches
+  GitHub state ([ADR 0006](./docs/adr/0006-agents-can-only-tighten-a-verdict.md),
+  [ADR 0011](./docs/adr/0011-the-engine-owns-github-state.md)).
+- **Reasoning is spent once, at onboarding.** An LLM studies the repository, writes the policy, and proposes the
+  checks that would let the autopilot merge more ([ADR 0009](./docs/adr/0009-onboarding-is-where-reasoning-is-spent.md)).
+- **One engine, thin triggers.** A single Python file needing only `gh`; laptop, cron and GitHub Actions run the same
+  code ([ADR 0003](./docs/adr/0003-one-engine-thin-triggers.md)).
 
-The engine is a single Python file with no dependencies beyond `gh`, so the same command runs from a laptop, a cron
-entry, and a GitHub Actions workflow — manual, scheduled and reactive runs are the same code path with different
-arguments ([ADR 0003](./docs/adr/0003-one-engine-thin-triggers.md)).
+## Onboard a repository with an LLM
 
-## Usage
+Run any coding agent from the repository to onboard:
 
 ```bash
-pr_autopilot.py sweep --dry-run                  # every open bot PR here: verdicts, touch nothing
-pr_autopilot.py sweep 123 456 --repo owner/name  # just these
-pr_autopilot.py sweep --fleet ~/.config/pr-autopilot/fleet.toml
+claude "Onboard this repository to pr-autopilot: https://github.com/Zebradil/pr-autopilot/blob/main/skills/pr-autopilot/SKILL.md"
+```
+
+The agent asks for the repository's criticality, then opens a pull request with the policy, the workflows and
+suggested check improvements. It leaves two steps to you: creating the labels and setting up the identity
+([manual, "Identity"](./docs/manual.md#identity)).
+
+The same skill investigates escalated pull requests: "Investigate why PR #123 was escalated".
+
+## Manual usage
+
+```bash
+pr_autopilot.py sweep --dry-run                  # verdicts for every open bot PR here, act on nothing
+pr_autopilot.py sweep 123 456 --repo owner/name  # only these PRs
+pr_autopilot.py sweep --config ./policy.toml     # try a policy before committing it
+pr_autopilot.py sweep --fleet fleet.toml         # many repositories
 pr_autopilot.py labels --repo owner/name         # create the autopilot labels
 ```
 
-Onboarding a repository is an agent's job, not a subcommand: point your agent at
-[`skills/pr-autopilot/SKILL.md`](./skills/pr-autopilot/SKILL.md). It writes the policy, adds the workflows, and
-proposes the checks that would let the autopilot merge more.
+In CI, use the action ([`action.yml`](./action.yml)); the [workflow templates](./templates/workflows/) call it.
 
-Policy lives in the repository it governs, at `.github/pr-autopilot.toml`
-([template](./templates/pr-autopilot.toml)). See [the manual](./docs/manual.md).
+## Documentation
 
-## Roadmap
+- [`docs/manual.md`](./docs/manual.md) — policy file, labels, triggers, identity, branch rules
+- [`CONTEXT.md`](./CONTEXT.md) — vocabulary
+- [`docs/adr/`](./docs/adr/) — design decisions
 
-Done: engine core (facts, verdicts, merging, limits, sticky state, `--dry-run`), the `pr-autopilot` action with caller
-workflow templates, releases, repair dispatch and the agent contract, the onboarding skill.
+## Status
 
-Next: run it on personal repositories for a while; gates, including the Atlantis plan-is-empty case;
-policy-bought advisory reviews; a fixture for pending checks (none existed when the fixtures were captured).
+Working: facts, verdicts, merging, limits, sticky state, `--dry-run`, the GitHub Action, repair dispatch, the
+onboarding skill. Tested against recorded payloads from real Renovate and Dependabot pull requests.
+
+Planned: gates (including Atlantis empty-plan), policy-bought advisory reviews.
