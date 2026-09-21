@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/Zebradil/pr-autopilot/compare/v1.0.0...v1.0.1) (2026-09-21)
+
+
+### Bug Fixes
+
+* update create-github-app-token action ([2820d17](https://github.com/Zebradil/pr-autopilot/commit/2820d17a1825e3952aa42f5b31cdeb472a7301cb))
+
 ## 1.0.0 (2026-09-21)
 
 
