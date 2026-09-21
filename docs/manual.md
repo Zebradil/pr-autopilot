@@ -95,6 +95,7 @@ allowlist, so a malformed file fails every sweep. Template: [`templates/config.t
 
 ```toml
 bots = ["acme-renovate"]        # default allowlist for every policy that does not set `bots`
+default = "infra"               # preset for a repository nothing else governs; omit to skip those
 
 [presets.infra.policy]          # a preset is a whole policy body
 patch = "merge"
@@ -112,7 +113,8 @@ with a handful of risk profiles and no commit in any of them. Onboarding then wr
 repository and the entry loses its `preset`.
 
 Resolution for one repository, first match wins: `--config FILE`, `--preset NAME`, the entry's `policy`, the
-entry's `preset`, the in-repo file. A repository with none of these is skipped with a message.
+entry's `preset`, the in-repo file, the operator file's `default`. A repository with none of these is skipped with a
+message. `default` applies to real runs too, so setting it is the operator's opt-in for every repository swept.
 
 A policy may set its own `bots = [...]`; otherwise the operator file's list applies, and without an operator file
 the default is `renovate` and `dependabot`. Names compare on the bare login (see **Facts**).

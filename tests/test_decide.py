@@ -1,6 +1,7 @@
 """Verdict tests: the lookup that decides whether a bot pull request merges."""
 
 import contextlib
+import dataclasses
 import io
 import os
 import sys
@@ -13,7 +14,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from pr_autopilot import (  # noqa: E402
-    IGNORE, Facts, GhError, Label, Operator, Policy, Result, Upgrade, decide, main, resolve_policy, worst,
+    IGNORE, Facts, GhError, Label, Operator, Policy, PolicyMissing, Result, Upgrade, decide, main, resolve_policy,
+    worst,
 )
 
 # Keeps the developer's own operator file out of every main() call below.
@@ -197,6 +199,23 @@ class TestOperatorFile(unittest.TestCase):
         with mock.patch("pr_autopilot.fetch_policy", return_value=POLICY) as fetch:
             resolve_policy("o/inrepo", self.op, None, None)
         fetch.assert_called_once_with("o/inrepo", ("acme-renovate",))
+
+    def test_default_preset_covers_only_a_missing_in_repo_file(self):
+        missing = mock.patch("pr_autopilot.fetch_policy", side_effect=PolicyMissing("404"))
+        with missing, self.assertRaises(PolicyMissing):
+            resolve_policy("o/other", self.op, None, None)
+        op = dataclasses.replace(self.op, default="infra")
+        with missing, contextlib.redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(resolve_policy("o/other", op, None, None).for_class("patch"), "merge")
+        self.assertIn("default preset 'infra'", err.getvalue())
+        with mock.patch("pr_autopilot.fetch_policy", return_value=POLICY):
+            self.assertIs(resolve_policy("o/other", op, None, None), POLICY)
+
+    def test_unknown_default_preset_is_rejected(self):
+        with open(self.path, "wb") as fh:
+            fh.write(b'default = "nope"\n' + OPERATOR_TOML)
+        with self.assertRaisesRegex(ValueError, "default.*nope"):
+            Operator.load(self.path)
 
     def test_legacy_repo_list(self):
         with open(self.path, "wb") as fh:

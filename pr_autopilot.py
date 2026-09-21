@@ -443,6 +443,7 @@ class Operator:
     bots: tuple[str, ...] = DEFAULT_BOTS
     presets: dict = dataclasses.field(default_factory=dict)
     repos: dict = dataclasses.field(default_factory=dict)  # "owner/name" -> {"preset": ...} | {"policy": ...} | {}
+    default: str | None = None  # preset for a repository with no entry and no in-repo file
     base_dir: str = "."
 
     @staticmethod
@@ -455,10 +456,15 @@ class Operator:
         for name, entry in repos.items():
             if not isinstance(entry, dict) or set(entry) - {"preset", "policy"} or len(entry) > 1:
                 raise ValueError(f"repos.{name!r}: want a table with at most one of preset, policy; got {entry!r}")
+        presets = d.get("presets") or {}
+        default = d.get("default")
+        if default is not None and default not in presets:
+            raise ValueError(f"default: unknown preset {default!r}; known: {sorted(presets)}")
         return Operator(
             bots=tuple(d.get("bots") or DEFAULT_BOTS),
-            presets=d.get("presets") or {},
+            presets=presets,
             repos=repos,
+            default=default,
             base_dir=os.path.dirname(os.path.abspath(path)),
         )
 
@@ -481,7 +487,7 @@ def default_operator_path() -> str:
 
 
 def resolve_policy(repo: str, operator: Operator, config: str | None, preset: str | None) -> Policy:
-    """Explicit CLI choice first, then the operator's entry for the repo, then the in-repo file."""
+    """Explicit CLI choice first, then the operator's entry for the repo, the in-repo file, the operator's default."""
     if config:
         with open(config, "rb") as fh:
             return Policy.from_toml(fh.read(), operator.bots)
@@ -492,7 +498,13 @@ def resolve_policy(repo: str, operator: Operator, config: str | None, preset: st
         return operator.policy_file(entry["policy"])
     if "preset" in entry:
         return operator.preset(entry["preset"])
-    return fetch_policy(repo, operator.bots)
+    try:
+        return fetch_policy(repo, operator.bots)
+    except PolicyMissing:
+        if not operator.default:
+            raise
+    print(f"{repo}: no {POLICY_PATH}; using default preset {operator.default!r}", file=sys.stderr)
+    return operator.preset(operator.default)
 
 
 def fetch_policy(repo: str, default_bots: tuple[str, ...] = DEFAULT_BOTS) -> Policy:
@@ -760,7 +772,7 @@ def main(argv=None) -> int:
         try:
             policy = resolve_policy(repo, operator, args.config, args.preset)
         except PolicyMissing:
-            print(f"{repo}: no {POLICY_PATH}; pass --preset/--config or add a [repos] entry; skipping",
+            print(f"{repo}: no {POLICY_PATH}; pass --preset/--config, add a [repos] entry, or set default; skipping",
                   file=sys.stderr)
             continue
         except (GhError, ValueError, OSError) as err:

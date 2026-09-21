@@ -6,6 +6,10 @@
 # have their own login, for example "acme-renovate".
 bots = ["renovate", "dependabot"]
 
+# Preset for a repository with no [repos] entry and no .github/pr-autopilot.toml, in real runs too.
+# Without it such a repository is skipped.
+# default = "strict"
+
 # A preset is a whole policy body, same shape as .github/pr-autopilot.toml.
 # `pr-autopilot sweep --repo o/r --preset infra --dry-run` tries one on any repository.
 [presets.infra.policy]
