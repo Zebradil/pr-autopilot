@@ -172,6 +172,7 @@ def normalise_class(raw: str) -> str:
     aliases = {
         "lockfilemaintenance": "lockfile",
         "lock file maintenance": "lockfile",
+        "pindigest": "pin",
         "bump": "patch",
         "rollback": "unknown",
         "replacement": "unknown",

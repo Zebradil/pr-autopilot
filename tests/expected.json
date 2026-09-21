@@ -263,6 +263,24 @@
     "verdict": "escalate",
     "reason": "failing: renovate/artifacts"
   },
+  "pr-autopilot-8-pin-digest.json": {
+    "author": "app/renovate",
+    "upgrades": [
+      [
+        "actions/checkout",
+        "pin",
+        "",
+        "fbc6f39"
+      ]
+    ],
+    "checks": [
+      0,
+      0,
+      2
+    ],
+    "verdict": "merge",
+    "reason": "policy: pin"
+  },
   "renovate-regex-manager-validator-action-36-dependabot-group.json": {
     "author": "app/dependabot",
     "upgrades": [
