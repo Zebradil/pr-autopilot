@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.2.0](https://github.com/Zebradil/pr-autopilot/compare/v1.1.0...v1.2.0) (2026-09-21)
+
+
+### Features
+
+* add default preset ([5a7636b](https://github.com/Zebradil/pr-autopilot/commit/5a7636bf953c7abb1bd0fc1f26605aa4a47af50a))
+
+
+### Bug Fixes
+
+* **skill:** check for vacuous green ([59d214e](https://github.com/Zebradil/pr-autopilot/commit/59d214e9ec7f3b0f81d7d8be5a59f80d50a7149e))
+
 ## [1.1.0](https://github.com/Zebradil/pr-autopilot/compare/v1.0.2...v1.1.0) (2026-09-21)
 
 
