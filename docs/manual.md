@@ -273,7 +273,7 @@ pr_autopilot.py sweep --policy ./policy.toml   # try a policy before committing 
 pr_autopilot.py labels --repo o/r              # create the five autopilot labels
 ```
 
-`--agent-command` (or `PR_AUTOPILOT_AGENT`) is the command that repairs a red pull request; it receives the rendered
+`sweep --agent` (or `PR_AUTOPILOT_AGENT`) is the command that repairs a red pull request; it receives the rendered
 prompt on stdin. Without it, a pull request needing repair escalates instead.
 
 ## Reporting
@@ -281,7 +281,7 @@ prompt on stdin. Without it, a pull request needing repair escalates instead.
 A sweep prints a table by default and a machine-readable document with `--json`. When `GITHUB_STEP_SUMMARY` is set,
 the table is also written to the Actions job summary.
 
-## Onboarding *(planned)*
+## Onboarding
 
 Onboarding studies one repository and delivers a pull request containing the policy file, the labels, the bot
 metadata template, and — as separate commits that can be dropped — the checks it thinks are missing. It detects what
@@ -289,5 +289,7 @@ is detectable (release mechanism, whether main deploys, gates, bot configuration
 what the tests actually assert, and asks the operator for criticality. Its evidence goes in the pull request
 description, so the policy is reviewable without re-deriving it.
 
-Run interactively it proposes and waits for approval. Run unattended it opens the pull request directly — a pull
-request, never a merge.
+`pr-autopilot onboard --agent CMD` runs it: the agent command starts interactively in the current directory, with
+the onboarding instructions from `skills/pr-autopilot/SKILL.md` appended as its first prompt, or substituted for a
+`{prompt}` argument. Without `--agent` it prints the instructions instead, for pasting into any agent. It proposes and waits for approval before opening the pull request.
+Unattended onboarding, which would open the pull request directly — a pull request, never a merge — is planned.

@@ -13,6 +13,7 @@ import dataclasses
 import json
 import os
 import re
+import shlex
 import shutil
 import string
 import subprocess
@@ -855,7 +856,7 @@ def sweep_repo(repo: str, numbers: list[int], policy: Policy, args) -> list[Resu
             else:
                 repairs += 1
                 verdict, outcome = dispatch_repair(
-                    facts, policy, reason, args.agent_command, args.dry_run
+                    facts, policy, reason, args.agent, args.dry_run
                 )
         elif verdict == "escalate" and Label.ESCALATED not in facts.labels:
             escalate(facts, reason, args.dry_run)
@@ -909,42 +910,105 @@ def create_labels(repo: str, dry_run: bool) -> None:
         print(f"{name}")
 
 
+ONBOARD_HEADER = """\
+Onboard the repository in the current directory to pr-autopilot, following the instructions below.
+
+pr-autopilot $version is installed at $root. Paths in the instructions (`templates/`, `docs/manual.md`,
+`pr_autopilot.py`) are relative to it; run the engine as `$engine`. Pin the workflows to
+`Zebradil/pr-autopilot@v$version`.
+
+"""
+
+
+def onboard(agent: str | None) -> int:
+    """Hand the terminal to an interactive agent primed with the onboarding skill (ADR 0009)."""
+    root = os.path.dirname(os.path.abspath(__file__))
+    with open(os.path.join(root, "skills", "pr-autopilot", "SKILL.md")) as f:
+        skill = f.read()
+    if skill.startswith("---"):
+        skill = skill.split("---", 2)[2].lstrip()
+    prompt = string.Template(ONBOARD_HEADER).substitute(
+        version=__version__, root=root, engine=os.path.join(root, "pr_autopilot.py")
+    ) + skill
+    if not agent:
+        print(prompt)
+        print(
+            "pr-autopilot: no --agent given, printed the onboarding prompt instead; "
+            'pass --agent "claude" (or another interactive agent) to onboard',
+            file=sys.stderr,
+        )
+        return 0
+    # Interactive agents take the opening prompt as their last argument (`claude`, `codex`,
+    # `cursor-agent`); `{prompt}` places it for those that want a flag, like `opencode --prompt`.
+    argv = shlex.split(agent)
+    if "{prompt}" in argv:
+        argv = [prompt if a == "{prompt}" else a for a in argv]
+    else:
+        argv.append(prompt)
+    try:
+        os.execvp(argv[0], argv)
+    except OSError as err:
+        print(f"pr-autopilot: {argv[0]}: {err}", file=sys.stderr)
+        return 127
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="pr-autopilot", description=__doc__)
     parser.add_argument(
         "--version", action="version", version=f"%(prog)s {__version__}"
     )
-    parser.add_argument("command", choices=["sweep", "labels"])
-    parser.add_argument(
-        "prs", nargs="*", type=int, help="pull request numbers (default: all bot PRs)"
-    )
-    parser.add_argument(
+    commands = parser.add_subparsers(dest="command", required=True)
+
+    targets = argparse.ArgumentParser(add_help=False)
+    targets.add_argument(
         "--repo", help="owner/name (default: the repository in the current directory)"
     )
-    parser.add_argument(
+    targets.add_argument(
         "--fleet",
         action="store_true",
-        help="sweep every repository in the operator file "
+        help="every repository in the operator file "
         "($PR_AUTOPILOT_CONFIG or ~/.config/pr-autopilot/config.toml)",
     )
-    parser.add_argument(
+    targets.add_argument(
         "--config",
         help="operator file (default: $PR_AUTOPILOT_CONFIG or ~/.config/pr-autopilot/config.toml)",
     )
-    parser.add_argument(
+    targets.add_argument("--dry-run", action="store_true")
+
+    sweep = commands.add_parser(
+        "sweep", parents=[targets], help="decide and act on open bot pull requests"
+    )
+    sweep.add_argument(
+        "prs", nargs="*", type=int, help="pull request numbers (default: all bot PRs)"
+    )
+    sweep.add_argument(
         "--policy", help="policy file to use instead of the one in the repository"
     )
-    parser.add_argument(
+    sweep.add_argument(
         "--preset", help="named preset from the operator file to use as the policy"
     )
-    parser.add_argument(
-        "--agent-command",
+    sweep.add_argument(
+        "--agent",
         default=os.environ.get("PR_AUTOPILOT_AGENT", ""),
-        help="command that repairs a PR, fed a prompt on stdin",
+        help="headless command that repairs a PR, fed a prompt on stdin, e.g. \"claude -p\" "
+        "(default: $PR_AUTOPILOT_AGENT)",
     )
-    parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--json", dest="as_json", action="store_true")
+    sweep.add_argument("--json", dest="as_json", action="store_true")
+
+    commands.add_parser("labels", parents=[targets], help="create the autopilot labels")
+
+    onboarding = commands.add_parser(
+        "onboard", help="start an agent that onboards the repository in the current directory"
+    )
+    onboarding.add_argument(
+        "--agent",
+        help="interactive agent command; the prompt is appended, or replaces a {prompt} argument "
+        "(default: print the prompt)",
+    )
     args = parser.parse_args(argv)
+
+    if args.command == "onboard":
+        return onboard(args.agent)
 
     if not shutil.which("gh"):
         print("pr-autopilot: gh is not installed", file=sys.stderr)
@@ -961,13 +1025,6 @@ def main(argv=None) -> int:
     except (OSError, ValueError) as err:
         print(f"pr-autopilot: {operator_path}: {err}", file=sys.stderr)
         return 1
-    if args.preset and args.preset not in operator.presets:
-        print(
-            f"pr-autopilot: {operator_path}: no preset {args.preset!r}; known: {sorted(operator.presets)}",
-            file=sys.stderr,
-        )
-        return 1
-
     if args.fleet:
         repos = list(operator.repos)
     elif args.repo:
@@ -979,6 +1036,13 @@ def main(argv=None) -> int:
         for repo in repos:
             create_labels(repo, args.dry_run)
         return 0
+
+    if args.preset and args.preset not in operator.presets:
+        print(
+            f"pr-autopilot: {operator_path}: no preset {args.preset!r}; known: {sorted(operator.presets)}",
+            file=sys.stderr,
+        )
+        return 1
 
     results: list[Result] = []
     for repo in repos:

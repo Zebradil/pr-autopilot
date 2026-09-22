@@ -25,6 +25,9 @@
             fileset = lib.fileset.unions [
               ./pr_autopilot.py
               ./prompts
+              ./skills
+              ./templates
+              ./docs/manual.md
               ./tests
             ];
           };
@@ -36,11 +39,13 @@
             python3 -m unittest discover -s tests -p 'test_*.py'
             runHook postCheck
           '';
-          # The script reads prompts/ relative to its own path, so both live together under share/.
+          # The script reads prompts/ and skills/ relative to its own path, and the onboarding agent reads
+          # templates/ and docs/ from there too, so everything lives together under share/.
           installPhase = ''
             runHook preInstall
             install -Dm755 pr_autopilot.py $out/share/pr-autopilot/pr_autopilot.py
-            cp -r prompts $out/share/pr-autopilot/
+            cp -r prompts skills templates $out/share/pr-autopilot/
+            install -Dm644 docs/manual.md $out/share/pr-autopilot/docs/manual.md
             makeWrapper $out/share/pr-autopilot/pr_autopilot.py $out/bin/pr-autopilot \
               --suffix PATH : ${lib.makeBinPath [ pkgs.gh ]}
             runHook postInstall

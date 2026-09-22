@@ -27,17 +27,21 @@ result up in the repository's policy table, and acts on the verdict:
 
 ## Onboard a repository with an LLM
 
-Run any coding agent from the repository to onboard:
+From a checkout of the repository to onboard:
 
 ```bash
-claude "Onboard this repository to pr-autopilot: https://github.com/Zebradil/pr-autopilot/blob/main/skills/pr-autopilot/SKILL.md"
+nix run github:Zebradil/pr-autopilot -- onboard                              # print the prompt, run no agent
+nix run github:Zebradil/pr-autopilot -- onboard --agent "claude --model sonnet"
+nix run github:Zebradil/pr-autopilot -- onboard --agent "opencode --prompt {prompt}"
 ```
 
-The agent asks for the repository's criticality, then opens a pull request with the policy, the workflows and
-suggested check improvements. It leaves two steps to you: creating the labels and setting up the identity
-([manual, "Identity"](./docs/manual.md#identity)).
+`onboard --agent` starts the agent interactively with the onboarding instructions as its first prompt, appended to the
+command or put in place of `{prompt}`. The agent asks for the repository's criticality, then opens a pull request
+with the policy, the workflows and suggested check improvements. It leaves two steps to you: creating the labels and
+setting up the identity ([manual, "Identity"](./docs/manual.md#identity)).
 
-The same skill investigates escalated pull requests: "Investigate why PR #123 was escalated".
+To investigate an escalated pull request, point an agent at the skill: "Investigate why PR #123 was escalated:
+https://github.com/Zebradil/pr-autopilot/blob/main/skills/pr-autopilot/SKILL.md".
 
 ## Manual usage
 

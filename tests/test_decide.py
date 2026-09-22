@@ -331,5 +331,32 @@ class TestBrokenSweep(unittest.TestCase):
         self.assertEqual(code, 1)
 
 
+class OnboardTest(unittest.TestCase):
+    def exec_argv(self, agent: str) -> list[str]:
+        with mock.patch("pr_autopilot.os.execvp") as execvp:
+            main(["onboard", "--agent", agent])
+        return execvp.call_args.args[1]
+
+    def test_prompt_is_appended(self):
+        argv = self.exec_argv("claude --model sonnet")
+        self.assertEqual(argv[:3], ["claude", "--model", "sonnet"])
+        self.assertIn("Onboard the repository in the current directory", argv[3])
+        self.assertNotIn("name: pr-autopilot", argv[3])
+
+    def test_no_agent_prints_prompt(self):
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch("pr_autopilot.os.execvp") as execvp, \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            self.assertEqual(main(["onboard"]), 0)
+        execvp.assert_not_called()
+        self.assertIn("## Onboarding a repository", out.getvalue())
+        self.assertIn("--agent", err.getvalue())
+
+    def test_prompt_placeholder(self):
+        argv = self.exec_argv("opencode --prompt {prompt} --model x")
+        self.assertEqual([argv[0], argv[1], argv[3], argv[4]], ["opencode", "--prompt", "--model", "x"])
+        self.assertIn("## Onboarding a repository", argv[2])
+
+
 if __name__ == "__main__":
     unittest.main()
