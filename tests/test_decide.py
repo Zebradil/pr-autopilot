@@ -4,6 +4,7 @@ import contextlib
 import dataclasses
 import io
 import os
+import re
 import sys
 import tempfile
 import unittest
@@ -14,8 +15,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from pr_autopilot import (  # noqa: E402
-    IGNORE, Facts, GhError, Label, Operator, Policy, PolicyMissing, Result, Upgrade, decide, main, parse_upgrades,
-    resolve_policy, worst,
+    IGNORE, Facts, GhError, Label, Operator, Policy, PolicyMissing, Result, Upgrade, decide, main, parse_state_comment,
+    parse_upgrades, report, resolve_policy, run_agent, sweep_repo, table, worst,
 )
 
 # Keeps the developer's own operator file out of every main() call below.
@@ -261,7 +262,7 @@ class TestOperatorFile(unittest.TestCase):
              mock.patch("pr_autopilot.fetch_policy", return_value=POLICY), \
              mock.patch("pr_autopilot.list_bot_prs", return_value=[]), \
              mock.patch("pr_autopilot.sweep_repo", return_value=[]) as sweep, \
-             contextlib.redirect_stdout(io.StringIO()):
+             contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(main(["sweep", "--fleet", "--dry-run"]), 0)
         self.assertEqual([c.args[0] for c in sweep.call_args_list], ["o/preset", "o/tuned", "o/inrepo"])
 
@@ -284,7 +285,7 @@ class TestExitCode(unittest.TestCase):
              mock.patch("pr_autopilot.fetch_policy", return_value=POLICY), \
              mock.patch("pr_autopilot.list_bot_prs", return_value=list(range(len(outcomes)))), \
              mock.patch("pr_autopilot.sweep_repo", return_value=results), \
-             contextlib.redirect_stdout(io.StringIO()):
+             contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             return main(["sweep", "--repo", "o/r"])
 
     def test_a_lone_unmerged_pr_is_not_a_failed_sweep(self):
@@ -356,6 +357,113 @@ class OnboardTest(unittest.TestCase):
         argv = self.exec_argv("opencode --prompt {prompt} --model x")
         self.assertEqual([argv[0], argv[1], argv[3], argv[4]], ["opencode", "--prompt", "--model", "x"])
         self.assertIn("## Onboarding a repository", argv[2])
+
+
+class TestOutput(unittest.TestCase):
+    """Colour is decoration: it must never reach a pipe, NO_COLOR, or the step summary."""
+
+    RESULTS = [Result("o/r", 1, "short", "merge", "green", "merged"),
+               Result("o/r", 22, "a longer title", "escalate", "major", "escalated")]
+
+    def render(self, **env) -> tuple[str, str]:
+        out = io.StringIO()
+        with tempfile.NamedTemporaryFile("r") as summary, \
+                mock.patch.dict(os.environ, {"GITHUB_STEP_SUMMARY": summary.name, **env}, clear=True), \
+                contextlib.redirect_stdout(out):
+            report(self.RESULTS, as_json=False)
+            return out.getvalue(), summary.read()
+
+    def test_plain_when_not_a_terminal(self):
+        out, summary = self.render()
+        self.assertNotIn("\033", out + summary)
+
+    def test_actions_get_colour_but_not_in_the_summary_and_columns_hold(self):
+        out, summary = self.render(GITHUB_ACTIONS="true")
+        self.assertIn("\033[32mmerge", out)
+        self.assertNotIn("\033", summary)
+        self.assertEqual(re.sub(r"\033\[[\d;]*m", "", out), self.render()[0])
+
+    def test_no_color_wins_over_actions(self):
+        out, _ = self.render(GITHUB_ACTIONS="true", NO_COLOR="1")
+        self.assertNotIn("\033", out)
+
+    def test_cells_wrap_to_the_terminal_and_keep_one_check_per_line(self):
+        checks = ("validate (harvester-arm-eu-dus1, harvester/terraform/harvester-arm-eu-dus1, 1.16.3)",
+                  "gate", "atlantis/plan")
+        reason = decide(pr(checks_failing=checks), POLICY)[1]
+        results = [Result("o/tcs-platform", 834, "Update non-major Terraform dependencies", "escalate",
+                          reason, "repair needed but no agent configured")]
+        lines = table(results, 120, colour=False).splitlines()
+        self.assertLessEqual(max(map(len, lines)), 120)
+        self.assertIn("Update non-major Terraform dependencies  failing:", lines[2])
+        self.assertTrue(lines[3].endswith("- validate (harvester-arm-eu-dus1,"))
+        self.assertTrue(any(line.endswith("  - gate") for line in lines))
+        self.assertTrue(lines[-1].endswith("  -> repair needed but no agent configured"))
+
+
+class TestSweepState(unittest.TestCase):
+    """The sticky state comment: one comment per PR, and nothing a later write in the sweep loses."""
+
+    def sweep(self, agent: str) -> list[tuple[str, ...]]:
+        calls = []
+
+        def gh(*args, check=True):
+            calls.append(args)
+            return "https://github.com/o/r/pull/1#issuecomment-42" if args[:2] == ("pr", "comment") else ""
+
+        args = mock.Mock(dry_run=False, agent=agent)
+        with mock.patch("pr_autopilot.fetch_pr", return_value=pr(checks_failing=("build",))), \
+                mock.patch("pr_autopilot.gh", side_effect=gh), \
+                contextlib.redirect_stderr(io.StringIO()):
+            self.result = sweep_repo("o/r", [1], POLICY, args)[0]
+        return calls
+
+    @staticmethod
+    def bodies(calls) -> list[str]:
+        return [a[-1] for a in calls if a[:2] == ("pr", "comment") or a[:3] == ("api", "-X", "PATCH")]
+
+    def test_repair_without_an_agent_escalates_with_a_note(self):
+        calls = self.sweep(agent="")
+        self.assertEqual((self.result.verdict, self.result.outcome),
+                         ("escalate", "repair needed but no agent configured"))
+        self.assertIn("Needs a human: repair needed but no agent configured", self.bodies(calls)[-1])
+        self.assertIn(("--add-label", Label.ESCALATED), [a[-2:] for a in calls])
+
+    def test_failed_repair_keeps_its_attempt_and_edits_the_one_comment(self):
+        calls = self.sweep(agent="true")
+        self.assertEqual(self.result.verdict, "escalate")
+        self.assertEqual([a[:2] for a in calls if a[:2] == ("pr", "comment")], [("pr", "comment")])
+        self.assertIn("repos/o/r/issues/comments/42", [a[3] for a in calls if a[:3] == ("api", "-X", "PATCH")])
+        self.assertIn('"attempts": 1', self.bodies(calls)[-1])
+        self.assertIn("Needs a human: agent produced no parseable result", self.bodies(calls)[-1])
+
+    def test_state_comment_id_is_the_numeric_rest_id(self):
+        state = parse_state_comment([{
+            "id": "IC_kwDOUiveU88AAAABV1HvzA",
+            "url": "https://github.com/o/r/pull/9#issuecomment-5759954892",
+            "body": '<!-- pr-autopilot:state {"attempts": 1} -->',
+        }])
+        self.assertEqual(state["_comment_id"], "5759954892")
+
+
+class TestRunAgent(unittest.TestCase):
+    def run_agent(self, command: str, timeout: float) -> tuple[str | None, str, float]:
+        err = io.StringIO()
+        started = datetime.now()
+        with mock.patch("pr_autopilot.AGENT_HEARTBEAT", 0.2), contextlib.redirect_stderr(err):
+            out = run_agent(command, "prompt", 7, timeout)
+        return out, err.getvalue(), (datetime.now() - started).total_seconds()
+
+    def test_prompt_goes_in_and_heartbeats_show_while_it_works(self):
+        out, err, _ = self.run_agent("sleep 0.7; cat", timeout=5)
+        self.assertEqual(out, "prompt")
+        self.assertIn("#7: agent still running", err)
+
+    def test_outliving_the_lease_kills_the_agent_not_just_its_shell(self):
+        # A shell with a child: killing only the shell would leave `sleep` holding stdout for 30s.
+        out, _, took = self.run_agent("sleep 30; echo late", timeout=0.5)
+        self.assertIsNone(out)
+        self.assertLess(took, 5)
 
 
 if __name__ == "__main__":

@@ -157,6 +157,11 @@ rendered prompt. The agent reads, edits and pushes code; it prints one JSON line
 
 Unparseable output is treated as `needs-human`. Labels, comments, approvals and merges are the engine's job.
 
+The prompt goes to the agent on stdin, and the engine reads the agent's stdout. The agent's stderr is not captured,
+so anything it logs there appears live. The engine prints a "still running" line every 30 seconds. An agent that runs
+past `lease_minutes` is killed with its whole process group and recorded as `needs-human`: once the lease expires,
+another sweep may dispatch a second agent on the same pull request.
+
 ## Identity
 
 The engine reads `GH_TOKEN` like `gh` does. For an organisation, install a GitHub App and use its installation
@@ -280,6 +285,11 @@ prompt on stdin. Without it, a pull request needing repair escalates instead.
 
 A sweep prints a table by default and a machine-readable document with `--json`. When `GITHUB_STEP_SUMMARY` is set,
 the table is also written to the Actions job summary.
+
+The report goes to stdout. Progress goes to stderr: one line per repository and one per pull request as it is
+decided, plus a line before each slow step, such as an agent repair. `--quiet` turns progress off. Verdicts are
+coloured on a terminal and in Actions logs. `NO_COLOR` turns colour off and `FORCE_COLOR` turns it on elsewhere. The
+job summary and `--json` output are never coloured.
 
 ## Onboarding
 

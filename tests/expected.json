@@ -177,7 +177,7 @@
       3
     ],
     "verdict": "repair",
-    "reason": "failing: fmt, clippy, test, cargo-deny, renovate/artifacts"
+    "reason": "failing:\n- fmt, clippy, test\n- cargo-deny\n- renovate/artifacts"
   },
   "know-mcp-27-docker-major.json": {
     "author": "app/renovate",
@@ -195,7 +195,7 @@
       2
     ],
     "verdict": "escalate",
-    "reason": "failing: cargo-deny"
+    "reason": "failing:\n- cargo-deny"
   },
   "know-mcp-28-rust-major-group.json": {
     "author": "app/renovate",
@@ -225,7 +225,7 @@
       2
     ],
     "verdict": "escalate",
-    "reason": "failing: fmt, clippy, test, cargo-deny"
+    "reason": "failing:\n- fmt, clippy, test\n- cargo-deny"
   },
   "know-mcp-29-lockfile-maintenance.json": {
     "author": "app/renovate",
@@ -261,7 +261,7 @@
       7
     ],
     "verdict": "escalate",
-    "reason": "failing: renovate/artifacts"
+    "reason": "failing:\n- renovate/artifacts"
   },
   "pr-autopilot-8-pin-digest.json": {
     "author": "app/renovate",
@@ -387,7 +387,7 @@
       22
     ],
     "verdict": "repair",
-    "reason": "failing: Check dist/, TypeScript Tests"
+    "reason": "failing:\n- Check dist/\n- TypeScript Tests"
   },
   "rustotpony-73-dependabot-rust.json": {
     "author": "app/dependabot",

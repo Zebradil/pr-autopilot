@@ -23,7 +23,7 @@ lockfile = "merge"
 max_merges    = 10   # merges per sweep
 max_repairs   = 3    # agent dispatches per sweep
 attempt_cap   = 2    # repair attempts per pull request, then escalate for good
-lease_minutes = 30   # how long one sweep's claim on a pull request lasts
+lease_minutes = 30   # how long one sweep's claim on a pull request lasts; also the repair agent's time limit
 
 [repair]
 strategy = "bot-branch"   # bot-branch | side-pr

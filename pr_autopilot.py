@@ -15,9 +15,11 @@ import os
 import re
 import shlex
 import shutil
+import signal
 import string
 import subprocess
 import sys
+import textwrap
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -333,7 +335,10 @@ def parse_state_comment(comments) -> dict:
         if m:
             try:
                 state = json.loads(m.group(1))
-                state["_comment_id"] = c.get("id")
+                # REST wants the numeric id; `id` here is a GraphQL node id, which REST 404s on.
+                numeric = re.search(r"#issuecomment-(\d+)$", c.get("url", ""))
+                if numeric:
+                    state["_comment_id"] = numeric.group(1)
                 return state
             except json.JSONDecodeError:
                 continue
@@ -458,8 +463,9 @@ def decide(
     if facts.mergeable == "CONFLICTING":
         return worst(policy_verdict, "repair"), "conflicting"
     if facts.checks_failing:
-        return worst(policy_verdict, "repair"), "failing: " + ", ".join(
-            facts.checks_failing[:3]
+        # One check per line: matrix job names carry their own commas, "validate (a, b, 1.16)".
+        return worst(policy_verdict, "repair"), "failing:" + "".join(
+            f"\n- {c}" for c in facts.checks_failing[:3]
         )
     if facts.checks_pending:
         return worst(policy_verdict, "wait"), "checks pending"
@@ -479,6 +485,38 @@ def leased(facts: Facts, policy: Policy, now: datetime) -> bool:
         return datetime.fromisoformat(until) > now
     except ValueError:
         return False
+
+
+# --- output -----------------------------------------------------------------------------------
+# stdout carries the report (or JSON); progress and diagnostics go to stderr so `--json | jq` works.
+
+VERDICT_COLOURS = {
+    "merge": "32", "gate": "33", "wait": "33", "repair": "36", "escalate": "31", "hold": "31",
+    IGNORE: "2",
+}
+QUIET = False
+
+
+def colour_enabled(stream) -> bool:
+    """https://no-color.org; Actions logs render ANSI although the runner's stream is no terminal."""
+    if os.environ.get("NO_COLOR"):
+        return False
+    if os.environ.get("FORCE_COLOR") or os.environ.get("GITHUB_ACTIONS") == "true":
+        return True
+    return stream.isatty()
+
+
+def paint(text: str, sgr: str, stream) -> str:
+    return f"\033[{sgr}m{text}\033[0m" if colour_enabled(stream) else text
+
+
+def progress(msg: str) -> None:
+    if not QUIET:
+        print(msg, file=sys.stderr, flush=True)
+
+
+def error(msg: str) -> None:
+    print(f"{paint('pr-autopilot:', '1;31', sys.stderr)} {msg}", file=sys.stderr)
 
 
 # --- github io --------------------------------------------------------------------------------
@@ -607,6 +645,7 @@ def fetch_pr(repo: str, number: int) -> Facts:
     pr = gh_json("pr", "view", str(number), "--repo", repo, "--json", PR_FIELDS)
     if pr.get("mergeable") == "UNKNOWN":
         # GitHub computes mergeability lazily: the first request triggers it, the second sees it.
+        progress(f"  #{number}: mergeability not computed yet, retrying in 3s")
         time.sleep(3)
         pr = gh_json("pr", "view", str(number), "--repo", repo, "--json", PR_FIELDS)
     return facts_from_json(repo, pr)
@@ -701,10 +740,13 @@ def sync_labels(facts: Facts, verdict: str, dry_run: bool) -> None:
 
 
 def write_state(facts: Facts, dry_run: bool, **updates) -> None:
-    """Upsert the sticky comment that carries this PR's autopilot state."""
+    """Upsert the sticky comment that carries this PR's autopilot state.
+
+    Updates land in `facts.state_comment` too, so the next write in the same sweep builds on them
+    instead of on the state as fetched: a repair's attempt count must survive its closing note.
+    """
+    facts.state_comment.update(updates, updated=datetime.now(timezone.utc).isoformat(timespec="seconds"))
     state = {k: v for k, v in facts.state_comment.items() if not k.startswith("_")}
-    state.update(updates)
-    state["updated"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     body = (
         "**pr-autopilot**\n\n"
         f"{state.get('note', '')}\n\n"
@@ -714,24 +756,19 @@ def write_state(facts: Facts, dry_run: bool, **updates) -> None:
         return
     comment_id = facts.state_comment.get("_comment_id")
     if comment_id:
-        numeric = (
-            str(comment_id).rsplit("_", 1)[-1]
-            if str(comment_id).startswith("IC_")
-            else comment_id
-        )
         try:
             gh(
                 "api",
                 "-X",
                 "PATCH",
-                f"repos/{facts.repo}/issues/comments/{numeric}",
+                f"repos/{facts.repo}/issues/comments/{comment_id}",
                 "-f",
                 f"body={body}",
             )
             return
         except GhError:
-            pass  # comment gone or id not numeric — fall through to a new one
-    gh(
+            pass  # comment deleted meanwhile — fall through to a new one
+    url = gh(
         "pr",
         "comment",
         str(facts.number),
@@ -741,6 +778,9 @@ def write_state(facts: Facts, dry_run: bool, **updates) -> None:
         body,
         check=False,
     )
+    created = re.search(r"#issuecomment-(\d+)", url)
+    if created:
+        facts.state_comment["_comment_id"] = created.group(1)
 
 
 def dispatch_repair(
@@ -762,14 +802,59 @@ def dispatch_repair(
     prompt = render_prompt(facts, reason, policy)
     if dry_run:
         return "repair", "would dispatch agent"
-    proc = subprocess.run(
-        agent_command, shell=True, input=prompt, capture_output=True, text=True
-    )
-    result = parse_agent_result(proc.stdout)
+    progress(f"  #{facts.number}: running agent to repair it")
+    stdout = run_agent(agent_command, prompt, facts.number, policy.lease_minutes * 60)
+    if stdout is None:
+        result = {
+            "outcome": "needs-human",
+            "summary": f"agent killed after {policy.lease_minutes} minutes, when its lease ran out",
+        }
+    else:
+        result = parse_agent_result(stdout)
     write_state(facts, dry_run, lease_until=None, note=result["summary"])
     if result["outcome"] == "fixed":
         return "wait", f"agent fixed: {result['summary']}"
     return worst("escalate", result.get("verdict_floor", "escalate")), result["summary"]
+
+
+AGENT_HEARTBEAT = 30  # seconds between "still running" lines
+
+
+def run_agent(command: str, prompt: str, number: int, timeout: float) -> str | None:
+    """The agent's stdout, or None when it outlived `timeout` and was killed.
+
+    The timeout is the lease: past it, another sweep may dispatch a second agent on the same PR.
+    stderr is not captured, so whatever the agent logs there shows up live.
+    """
+    # Own process group: `shell=True` puts a shell between us and the agent, and killing only
+    # the shell would leave the agent running and holding stdout open.
+    proc = subprocess.Popen(
+        command, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
+        start_new_session=True,
+    )
+    started = time.monotonic()
+    stdin = prompt
+    try:
+        while True:
+            left = timeout - (time.monotonic() - started)
+            try:
+                return proc.communicate(stdin, timeout=max(0.1, min(AGENT_HEARTBEAT, left)))[0]
+            except subprocess.TimeoutExpired:
+                stdin = None  # already sent; communicate() refuses input on a retry
+            elapsed = int(time.monotonic() - started)
+            if elapsed >= timeout:
+                break
+            progress(f"  #{number}: agent still running ({elapsed // 60}m{elapsed % 60:02d}s)")
+    finally:
+        # Also on Ctrl-C: the agent's own session does not receive the terminal's SIGINT.
+        if proc.poll() is None:
+            os.killpg(proc.pid, signal.SIGTERM)
+            try:
+                proc.communicate(timeout=10)
+            except subprocess.TimeoutExpired:
+                os.killpg(proc.pid, signal.SIGKILL)
+                proc.communicate()
+    return None
 
 
 def parse_agent_result(stdout: str) -> dict:
@@ -837,7 +922,7 @@ class Result:
 def sweep_repo(repo: str, numbers: list[int], policy: Policy, args) -> list[Result]:
     results: list[Result] = []
     merged = repairs = 0
-    for number in numbers:
+    for i, number in enumerate(numbers, 1):
         facts = fetch_pr(repo, number)
         verdict, reason = decide(facts, policy)
         outcome = "no action"
@@ -858,11 +943,20 @@ def sweep_repo(repo: str, numbers: list[int], policy: Policy, args) -> list[Resu
                 verdict, outcome = dispatch_repair(
                     facts, policy, reason, args.agent, args.dry_run
                 )
-        elif verdict == "escalate" and Label.ESCALATED not in facts.labels:
-            escalate(facts, reason, args.dry_run)
-            outcome = "escalated"
+
+        # After the branches above: a repair that could not run or did not fix it escalates too.
+        if verdict == "escalate" and Label.ESCALATED not in facts.labels:
+            if outcome == "no action":
+                escalate(facts, reason, args.dry_run)
+                outcome = "escalated"
+            else:
+                escalate(facts, f"{outcome}\n\n{reason}", args.dry_run)
 
         sync_labels(facts, verdict, args.dry_run)
+        progress(
+            f"  [{i}/{len(numbers)}] #{number} "
+            f"{paint(verdict, VERDICT_COLOURS.get(verdict, '0'), sys.stderr)} -> {outcome}"
+        )
         results.append(Result(repo, number, facts.title, verdict, reason, outcome))
     return results
 
@@ -874,19 +968,63 @@ def report(results: list[Result], as_json: bool) -> None:
     if not results:
         print("no bot pull requests")
         return
-    width = max(len(r.title) for r in results)
-    lines = [f"{'PR':>16}  {'VERDICT':<9} {'TITLE':<{width}}  REASON / OUTCOME"]
-    for r in results:
-        lines.append(
-            f"{r.repo.split('/')[-1] + '#' + str(r.number):>16}  {r.verdict:<9} "
-            f"{r.title:<{width}}  {r.reason} -> {r.outcome}"
-        )
-    out = "\n".join(lines)
-    print(out)
+    width = shutil.get_terminal_size().columns if sys.stdout.isatty() else None
+    print(table(results, width, colour=True))
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:
         with open(summary, "a") as fh:
-            fh.write(f"### pr-autopilot\n\n```\n{out}\n```\n")
+            fh.write(f"### pr-autopilot\n\n```\n{table(results, None, colour=False)}\n```\n")
+
+
+def wrap(text: str, width: int | None, indent: str = "") -> list[str]:
+    if not width:
+        return [text]
+    return textwrap.wrap(text, width, subsequent_indent=indent, break_on_hyphens=False) or [text]
+
+
+def table(results: list[Result], width: int | None, colour: bool) -> str:
+    """TITLE and REASON / OUTCOME wrap to fit `width`; None never wraps (logs, the job summary)."""
+
+    def style(text: str, sgr: str) -> str:
+        return paint(text, sgr, sys.stdout) if colour else text
+
+    prs = [f"{r.repo.split('/')[-1]}#{r.number}" for r in results]
+    pr_w = max(len("PR"), *map(len, prs))
+    verdict_w = max(len("VERDICT"), *map(len, VERDICTS + (IGNORE,)))
+    title_w = max(len("TITLE"), *(len(r.title) for r in results))
+    details_w = None
+    if width:
+        room = width - pr_w - verdict_w - 6  # three two-space gutters
+        title_w = min(title_w, max(20, room // 2))
+        details_w = max(20, room - title_w)
+
+    rows = []
+    for pr, r in zip(prs, results):
+        title = wrap(r.title, width and title_w)
+        details = []
+        for line in r.reason.splitlines():
+            details += wrap(line, details_w, "  " if line.startswith("- ") else "")
+        outcome = "2" if r.outcome == "no action" else "1;" + VERDICT_COLOURS.get(r.verdict, "0")
+        details += [style(line, outcome) for line in wrap(f"-> {r.outcome}", details_w, "   ")]
+        lines = []
+        for i in range(max(len(title), len(details))):
+            # Pad before painting: escape codes would otherwise count towards the column width.
+            verdict = f"{r.verdict if i == 0 else '':<{verdict_w}}"
+            if i == 0:
+                verdict = style(verdict, VERDICT_COLOURS.get(r.verdict, "0"))
+            cells = (
+                f"{pr if i == 0 else '':>{pr_w}}",
+                verdict,
+                f"{title[i] if i < len(title) else '':<{title_w}}",
+                details[i] if i < len(details) else "",
+            )
+            lines.append("  ".join(cells).rstrip())
+        rows.append("\n".join(lines))
+
+    header = f"{'PR':>{pr_w}}  {'VERDICT':<{verdict_w}}  {'TITLE':<{title_w}}  REASON / OUTCOME"
+    # Blank lines between rows only when some row spans several; single-line rows stay dense.
+    sep = "\n\n" if any("\n" in row for row in rows) else "\n"
+    return sep.join([header, *rows])
 
 
 def create_labels(repo: str, dry_run: bool) -> None:
@@ -948,7 +1086,7 @@ def onboard(agent: str | None) -> int:
     try:
         os.execvp(argv[0], argv)
     except OSError as err:
-        print(f"pr-autopilot: {argv[0]}: {err}", file=sys.stderr)
+        error(f"{argv[0]}: {err}")
         return 127
 
 
@@ -994,6 +1132,9 @@ def main(argv=None) -> int:
         "(default: $PR_AUTOPILOT_AGENT)",
     )
     sweep.add_argument("--json", dest="as_json", action="store_true")
+    sweep.add_argument(
+        "-q", "--quiet", action="store_true", help="no progress on stderr, only the report"
+    )
 
     commands.add_parser("labels", parents=[targets], help="create the autopilot labels")
 
@@ -1011,7 +1152,7 @@ def main(argv=None) -> int:
         return onboard(args.agent)
 
     if not shutil.which("gh"):
-        print("pr-autopilot: gh is not installed", file=sys.stderr)
+        error("gh is not installed")
         return 2
 
     # Loaded even for a single repository: its `bots` is the default allowlist for every policy.
@@ -1023,7 +1164,7 @@ def main(argv=None) -> int:
             else Operator()
         )
     except (OSError, ValueError) as err:
-        print(f"pr-autopilot: {operator_path}: {err}", file=sys.stderr)
+        error(f"{operator_path}: {err}")
         return 1
     if args.fleet:
         repos = list(operator.repos)
@@ -1038,12 +1179,11 @@ def main(argv=None) -> int:
         return 0
 
     if args.preset and args.preset not in operator.presets:
-        print(
-            f"pr-autopilot: {operator_path}: no preset {args.preset!r}; known: {sorted(operator.presets)}",
-            file=sys.stderr,
-        )
+        error(f"{operator_path}: no preset {args.preset!r}; known: {sorted(operator.presets)}")
         return 1
 
+    global QUIET
+    QUIET = args.quiet
     results: list[Result] = []
     for repo in repos:
         try:
@@ -1055,15 +1195,18 @@ def main(argv=None) -> int:
             )
             continue
         except (GhError, ValueError, OSError) as err:
-            print(f"pr-autopilot: {repo}: {err}", file=sys.stderr)
+            error(f"{repo}: {err}")
             return 1
         try:
             numbers = args.prs or list_bot_prs(repo, policy)
+            progress(f"{paint(repo, '1', sys.stderr)}: {len(numbers)} bot pull request(s)")
             results += sweep_repo(repo, numbers, policy, args)
         except GhError as err:
-            print(f"pr-autopilot: {repo}: {err}", file=sys.stderr)
+            error(f"{repo}: {err}")
             return 1
 
+    if not args.as_json:
+        progress("")
     report(results, args.as_json)
     # Exit code reports whether the sweep ran, never what it decided: a pull request waiting on
     # checks, or correctly escalated, is a successful sweep. Non-zero is reserved for a sweep that
