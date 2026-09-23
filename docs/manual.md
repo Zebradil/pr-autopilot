@@ -189,11 +189,19 @@ token. A fine-grained personal access token is the accepted shortcut for persona
 token cannot approve pull requests unless the organisation has enabled that, so repositories whose protection
 requires an approval need an identity of their own.
 
-The `Zebradil/pr-autopilot` action takes either, and the workflow templates wire both: set the
-`PR_AUTOPILOT_CLIENT_ID` repository **variable** and the `PR_AUTOPILOT_APP_PRIVATE_KEY` secret and it mints an
-installation token per run, or leave the variable unset and it falls back to the `PR_AUTOPILOT_TOKEN` secret.
+The `Zebradil/pr-autopilot` action takes the token in one of three ways. Each needs the same App (or token)
+permissions, listed below; they differ in where the credential lives and what each repository has to carry.
 
-Across many repositories, the octo-sts path below removes the per-repository secrets altogether.
+| Path                          | Credential lives in                      | Per-repository setup                 | Fits                                    |
+| ----------------------------- | ---------------------------------------- | ------------------------------------ | --------------------------------------- |
+| App key in secrets            | Every repository, or organisation secrets | A variable and a secret              | Organisations; a few personal repos     |
+| [octo-sts](#octo-sts)         | One octo-sts service you run             | None                                 | Many repositories on a personal account |
+| [Token](#the-token-shortcut)  | Every repository                         | A secret                             | Early testing                           |
+
+The workflow templates wire the first and the last: set the `PR_AUTOPILOT_CLIENT_ID` repository **variable** and the
+`PR_AUTOPILOT_APP_PRIVATE_KEY` secret and the action mints an installation token per run, or leave the variable
+unset and it falls back to the `PR_AUTOPILOT_TOKEN` secret. octo-sts replaces both inputs with a step that fetches
+the token; onboarding writes that step when the operator file asks for it.
 
 ### Permissions
 
@@ -246,63 +254,176 @@ The App also has to be allowed through whatever guards the default branch — se
 
 ### octo-sts
 
-A personal account has no account-level secrets, so the App path puts a copy of the private key in every governed
-repository: onboarding needs a secrets step, rotation touches every repository, and write access to any one of them
-is enough to take the key. [octo-sts](https://github.com/octo-sts/app) holds the key instead and exchanges a
-workflow's GitHub OIDC token for an installation token ([ADR 0017](./adr/0017-tokens-come-from-octo-sts.md)).
+Organisations have organisation secrets; a personal account does not. On a personal account the App-key path puts
+a copy of the private key in every governed repository: onboarding needs a secrets step, rotation touches every
+repository, and write access to any one of them is enough to take the key and mint tokens for all of them.
 
-- Run an octo-sts instance with the App's private key; the public `octo-sts.dev` acts as its own App, not yours.
-  Scoping a token to the calling repository needs `caller_repository_only`, which the fork at
-  [Zebradil/octo-sts](https://github.com/Zebradil/octo-sts) adds and upstream does not have yet.
-- Install the App on **All repositories**, so a new repository needs no setup. The App needs Contents read at least,
-  because octo-sts reads policies through it.
-- Commit one trust policy to the account's `.github` repository, `.github/chainguard/pr-autopilot.sts.yaml`:
+[octo-sts](https://github.com/octo-sts/app) is a small service that holds the key instead. A workflow sends it the
+GitHub Actions OIDC token of its run; octo-sts checks it against a trust policy in the owner's `.github` repository
+and returns a short-lived installation token of your App. No repository carries a secret, and with the App
+installed on all repositories a new repository needs no setup at all
+([ADR 0017](./adr/0017-tokens-come-from-octo-sts.md)).
 
-  ```yaml
-  issuer: https://token.actions.githubusercontent.com
-  subject_pattern: "repo:acme@<owner id>/[^/@]+@[0-9]+:.*"
-  claim_pattern:
-    repository_owner_id: "<owner id>"
-    workflow_ref: "acme/[^/]+/\\.github/workflows/pr-autopilot-(sweep|reactive)\\.yml@refs/heads/main"
-  app: <app_name in the octo-sts config>
-  caller_repository_only: true
-  permissions:
-    contents: write
-    pull_requests: write
-    checks: read
-    statuses: read
-    issues: write
-    workflows: write
-  ```
+The public instance at `octo-sts.dev` does not help here: it mints tokens of its own App, `octo-sts`, which asks for
+broad write access and would be the actor on every approval. Using your App means running your own instance.
 
-  GitHub issues subjects with numeric IDs (`repo:acme@1234/web@5678:ref:refs/heads/main`); the owner ID is
-  `gh api users/<owner> -q .id`. `workflow_ref` keeps every other workflow from asking; widen it for repositories
-  whose default branch is not `main`. `app:` picks the App when octo-sts holds more than one.
-- Set `octo_sts` in the operator file, and onboarding wires the workflows like this instead of the template's
-  identity inputs:
+#### 1. The App
 
-  ```yaml
-  permissions:
-    contents: write
-    pull-requests: write
-    id-token: write
+Create it as in **Creating the App** above, with two differences:
 
-  jobs:
-    sweep:
-      steps:
-        - uses: octo-sts/action@f603d3be9d8dd9871a265776e625a27b00effe05 # v1.1.1
-          id: sts
-          with:
-            domain: sts.acme.dev
-            scope: ${{ github.repository_owner }}
-            identity: pr-autopilot
-        - uses: Zebradil/pr-autopilot@vX.Y.Z
-          with:
-            token: ${{ steps.sts.outputs.token }}
-  ```
+- **Install** it on *All repositories* instead of selected ones. That is what makes a new repository need nothing;
+  the trust policy, not the installation, decides which repositories get tokens.
+- The **private key** goes to octo-sts, not into any repository. Note the numeric **App ID** as well as the Client
+  ID: octo-sts is configured by App ID.
 
-  `scope` is the owner, not `owner/repo`: the policy lives in the owner's `.github` repository, and
-  `caller_repository_only` refuses repository scopes. octo-sts caches policies for five minutes.
+The App needs at least Contents read, which it has, because octo-sts reads trust policies through the App's own
+installation, so the App must also be installed on the `.github` repository ("All repositories" covers it).
+
+#### 2. The service
+
+octo-sts is stateless: one container, no database. GitHub-hosted runners call it from the internet, so it needs a
+public HTTPS address; the domain below is `sts.acme.dev`.
+
+Which image:
+
+- [`Zebradil/octo-sts`](https://github.com/Zebradil/octo-sts) (`ghcr.io/zebradil/octo-sts`), a fork carrying two
+  changes proposed upstream: `caller_repository_only`, which scopes each token to the calling repository, and
+  `OCTOSTS_ALLOWED_ISSUERS`, which stops octo-sts from fetching OIDC discovery from whatever issuer an incoming token
+  claims. Use it until upstream has both.
+- Upstream [`octo-sts/app`](https://github.com/octo-sts/app) works without them; see **Without the fork** below for
+  what that costs.
+
+Environment:
+
+| Variable                  | Value                                                                  |
+| ------------------------- | ---------------------------------------------------------------------- |
+| `STS_DOMAIN`              | `sts.acme.dev`; octo-sts also expects it as the OIDC token's audience   |
+| `PORT`                    | `8080`                                                                 |
+| `APP_CONFIG_FILE`         | Path of the App file below                                             |
+| `OCTOSTS_ALLOWED_ISSUERS` | `https://token.actions.githubusercontent.com` (fork only)               |
+| `METRICS`                 | `false`, unless an OpenTelemetry collector is wired                    |
+
+The App file maps the owner to the App and its key; `${VAR}` expands from the environment, so the key can come from
+a secret store:
+
+```yaml
+orgs:
+  - name: acme                  # the account or organisation that owns the repositories
+    apps:
+      - app_id: 1234567
+        app_name: acme-pr-autopilot   # what trust policies name in `app:`
+        private_key: ${PR_AUTOPILOT_PEM}
+```
+
+Leave out a `"*"` entry: requests for any other owner should fail rather than be served by your App. Ready when
+`curl https://sts.acme.dev/` returns a JSON banner. If the service is public, restrict its outbound traffic to the
+internet as well, since it makes outbound calls on behalf of anyone who can reach it.
+
+#### 3. The trust policy
+
+One file for every repository, `.github/chainguard/pr-autopilot.sts.yaml` in the owner's `.github` repository.
+The file name is the `identity` the workflows ask for.
+
+```yaml
+issuer: https://token.actions.githubusercontent.com
+subject_pattern: "repo:acme@<owner id>/[^/@]+@[0-9]+:.*"
+claim_pattern:
+  repository_owner_id: "<owner id>"
+  workflow_ref: "acme/[^/]+/\\.github/workflows/pr-autopilot-(sweep|reactive)\\.yml@refs/heads/main"
+app: acme-pr-autopilot
+caller_repository_only: true
+permissions:
+  contents: write
+  pull_requests: write
+  checks: read
+  statuses: read
+  issues: write
+  workflows: write
+```
+
+- `subject_pattern`: GitHub issues subjects with numeric IDs, `repo:acme@1234/web@5678:ref:refs/heads/main`; a
+  pattern in the older `repo:acme/web:…` form matches nothing. The owner ID is `gh api users/<owner> -q .id`.
+- `workflow_ref`: only the two autopilot workflows on `main` may ask. Without it, any workflow in any repository
+  could get a token with these permissions for its own repository. Widen the branch part for repositories whose
+  default branch is not `main`.
+- `app`: the `app_name` from the App file. Required once octo-sts holds more than one App, otherwise it balances
+  between them and the workflow may act as the wrong one.
+- `caller_repository_only`: the token covers only the repository whose workflow asked. Requires the owner as the
+  request scope, never `owner/repo`.
+- `permissions`: the table in **Permissions**.
+
+octo-sts caches policies for five minutes, so an edit takes up to that long to apply.
+
+#### 4. The workflows
+
+Each workflow gets `id-token: write` and a step that fetches the token before the action; the action's identity
+inputs shrink to `token`:
+
+```yaml
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  sweep:
+    runs-on: ubuntu-slim
+    steps:
+      - uses: octo-sts/action@f603d3be9d8dd9871a265776e625a27b00effe05 # v1.1.1
+        id: sts
+        with:
+          domain: sts.acme.dev
+          scope: ${{ github.repository_owner }}
+          identity: pr-autopilot
+      - uses: Zebradil/pr-autopilot@vX.Y.Z
+        with:
+          token: ${{ steps.sts.outputs.token }}
+```
+
+The domain is written into the workflow on purpose: a repository variable would bring back the per-repository setup
+octo-sts exists to remove.
+
+Onboarding writes these steps instead of the templates' secret inputs when the operator file names the service:
+
+```toml
+octo_sts = "sts.acme.dev"
+```
+
+Only `pr-autopilot onboard` reads the key, to tell the onboarding agent which identity to wire and where; sweeps
+ignore it, and the engine never talks to octo-sts. Without the key, onboarding writes the App-key inputs, and a
+repository already onboarded that way is switched by editing its workflows as above and deleting its secrets.
+
+#### 5. Check it
+
+Merge the workflow change, then run the sweep by hand with `dry_run` (Actions → pr-autopilot sweep → Run workflow).
+Common failures, by the message octo-sts returns (the `octo-sts/action` step should show it; not yet observed):
+
+- `trust policy: subject "…" did not match pattern "…"`, or the same for a claim: the policy did not match. Compare
+  `subject_pattern` and `workflow_ref` with the claims in the message; a run from a branch other than `main` fails
+  `workflow_ref` by design.
+- `unable to find trust policy for "pr-autopilot"`: the file is missing from the `.github` repository, or the App is
+  not installed there.
+- `trust policy app "…" is not a configured app`: `app:` does not match an `app_name` in the App file.
+- `must be requested with scope "…"`: the workflow asked with `owner/repo`; `scope` must be the owner.
+- A failure within five minutes of a policy edit: the old policy may still be cached.
+
+To confirm the scoping, use the token to create a label in a different repository; it must fail. Reading does not
+prove anything, because any token can read a public repository.
+
+#### Without the fork
+
+Upstream octo-sts has no `caller_repository_only`. A policy in the owner's `.github` repository then grants its
+`repositories:` list, or every repository the App is installed on when the list is absent, to any workflow the
+policy matches — one repository's workflow could approve and merge in another. Two ways to live with that:
+
+- Keep one owner-level policy and accept the breadth; `workflow_ref` still limits it to the autopilot workflows on
+  `main`, so the exposure is a change to those workflow files in any governed repository.
+- Put a policy in each repository instead (`.github/chainguard/pr-autopilot.sts.yaml` in that repository, requested
+  with `scope: ${{ github.repository }}`), which scopes the token to that repository but brings back one file per
+  repository.
+
+Upstream also fetches OIDC discovery from whatever issuer an incoming token names before checking any policy. A
+publicly reachable instance must block its outbound traffic to private address ranges.
 
 ### The token shortcut
 
