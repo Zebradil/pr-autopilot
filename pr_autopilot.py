@@ -25,7 +25,7 @@ from datetime import datetime, timedelta, timezone
 
 import tomllib
 
-__version__ = "1.2.0"  # x-release-please-version
+__version__ = "1.3.0"  # x-release-please-version
 
 POLICY_PATH = ".github/pr-autopilot.toml"
 STATE_MARKER = "pr-autopilot:state"

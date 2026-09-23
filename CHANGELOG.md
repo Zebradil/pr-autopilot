@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.3.0](https://github.com/Zebradil/pr-autopilot/compare/v1.2.0...v1.3.0) (2026-09-23)
+
+
+### Features
+
+* add --version flag ([166e211](https://github.com/Zebradil/pr-autopilot/commit/166e211b2db34d15f8f34362dc5d18d6fc9cf796))
+* colour, wrap and stream sweep output ([7500aad](https://github.com/Zebradil/pr-autopilot/commit/7500aada381e8286b0317aef8248188576be8426))
+* gate by atlantis/plan check, set atlantis user name ([e2ea272](https://github.com/Zebradil/pr-autopilot/commit/e2ea272c0710ce76a8ede0ec84313dc39e02ebd7))
+* onboard subcommand, --agent-command renamed to --agent ([6be8b42](https://github.com/Zebradil/pr-autopilot/commit/6be8b4233177bae2a26f80a1858ff913a4d31786))
+* per-manager policies ([ae4cc3c](https://github.com/Zebradil/pr-autopilot/commit/ae4cc3cfa7d7da1894eb9219ed0d664bba46c5c4))
+* split --config and --policy ([0f97c3c](https://github.com/Zebradil/pr-autopilot/commit/0f97c3c3f3ec7a506a95468c64eaeef3997ae3c3))
+
+
+### Bug Fixes
+
+* assess atlantis plan results when deciding ([a6c30ad](https://github.com/Zebradil/pr-autopilot/commit/a6c30ade12cffbe773b12c9ef7f30ebb143b2072))
+* edit the state comment by numeric REST id, not GraphQL node id ([7500aad](https://github.com/Zebradil/pr-autopilot/commit/7500aada381e8286b0317aef8248188576be8426))
+* escalate a PR whose repair could not run or did not fix it ([7500aad](https://github.com/Zebradil/pr-autopilot/commit/7500aada381e8286b0317aef8248188576be8426))
+* keep the repair attempt count across writes within one sweep ([7500aad](https://github.com/Zebradil/pr-autopilot/commit/7500aada381e8286b0317aef8248188576be8426))
+* skip Atlantis gate when plan touches no project ([556e7f9](https://github.com/Zebradil/pr-autopilot/commit/556e7f902a84045bdaf0a8e4bd7af6a11eca9d0c))
+
 ## [1.2.0](https://github.com/Zebradil/pr-autopilot/compare/v1.1.0...v1.2.0) (2026-09-21)
 
 
