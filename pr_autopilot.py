@@ -114,6 +114,8 @@ class Upgrade:
     update_class: str
     current: str = ""
     new: str = ""
+    # Renovate's manager name, or Dependabot's ecosystem name; "" when the bot did not say.
+    manager: str = ""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -138,10 +140,6 @@ class Facts:
     plan_check: bool = False
     # Summary line of the latest Atlantis plan; "" when that plan has none, None when no plan ran.
     plan: str | None = None
-
-    @property
-    def classes(self) -> tuple[str, ...]:
-        return tuple(u.update_class for u in self.upgrades) or ("unknown",)
 
     @property
     def attempts(self) -> int:
@@ -185,6 +183,7 @@ def parse_upgrades(body: str, files: tuple[str, ...] = ()) -> list[Upgrade]:
                     update_class=normalise_class(u.get("updateType", "")),
                     current=u.get("currentVersion") or u.get("currentValue", ""),
                     new=u.get("newVersion") or u.get("newValue", ""),
+                    manager=u.get("manager", ""),
                 )
                 for u in json.loads(marker.group(1))
             ]
@@ -380,8 +379,16 @@ def parse_plan(comments, authors: tuple[str, ...] = ()) -> str | None:
     return plan
 
 
+def dependabot_manager(head_ref: str) -> str:
+    """Dependabot names its branches `dependabot/<ecosystem>/...`; its body never names the ecosystem."""
+    parts = head_ref.split("/")
+    return parts[1] if len(parts) > 2 and parts[0] == "dependabot" else ""
+
+
 def facts_from_json(repo: str, pr: dict, atlantis: tuple[str, ...] = ()) -> Facts:
     failing, pending = check_lists(pr.get("statusCheckRollup"))
+    manager = dependabot_manager(pr.get("headRefName", ""))
+    upgrades = parse_upgrades(pr.get("body", ""), tuple(f["path"] for f in pr.get("files") or []))
     return Facts(
         repo=repo,
         number=pr["number"],
@@ -395,9 +402,8 @@ def facts_from_json(repo: str, pr: dict, atlantis: tuple[str, ...] = ()) -> Fact
         merge_state=pr.get("mergeStateStatus", ""),
         labels=frozenset(l["name"] for l in pr.get("labels") or []),
         upgrades=tuple(
-            parse_upgrades(
-                pr.get("body", ""), tuple(f["path"] for f in pr.get("files") or [])
-            )
+            dataclasses.replace(u, manager=manager) if manager and not u.manager else u
+            for u in upgrades
         ),
         checks_failing=tuple(failing),
         checks_pending=tuple(pending),
@@ -421,6 +427,8 @@ class Policy:
     bots: tuple[str, ...] = DEFAULT_BOTS
     atlantis: tuple[str, ...] = ()
     table: dict = dataclasses.field(default_factory=dict)
+    # manager -> {update class -> verdict}; a class it omits falls back to `table`.
+    managers: dict = dataclasses.field(default_factory=dict)
     max_merges: int = 10
     max_repairs: int = 3
     attempt_cap: int = 2
@@ -440,22 +448,19 @@ class Policy:
             raise ValueError(
                 "no [policy] table; an operator file goes in --config or $PR_AUTOPILOT_CONFIG"
             )
-        table = {k: v for k, v in (d.get("policy") or {}).items() if k in CLASSES}
-        extras = {"review_when", "allow_without_checks"}
-        unknown = {
-            k for k in (d.get("policy") or {}) if k not in CLASSES and k not in extras
-        }
-        if unknown:
-            raise ValueError(f"unknown update classes in [policy]: {sorted(unknown)}")
-        bad = {v for v in table.values() if v not in VERDICTS}
-        if bad:
-            raise ValueError(f"unknown verdicts in [policy]: {sorted(bad)}")
+        raw = d.get("policy") or {}
+        managers = {k: v for k, v in raw.items() if isinstance(v, dict)}
+        table = check_table("[policy]", {k: v for k, v in raw.items() if k not in managers},
+                            frozenset({"review_when", "allow_without_checks"}))
+        for name, overrides in managers.items():
+            check_table(f"[policy.{name}]", overrides)
         limits = d.get("limits") or {}
         return Policy(
             enabled=d.get("enabled", True),
             bots=tuple(d.get("bots") or defaults.bots),
             atlantis=tuple(d.get("atlantis") or defaults.atlantis),
             table=table,
+            managers=managers,
             max_merges=limits.get("max_merges", 10),
             max_repairs=limits.get("max_repairs", 3),
             attempt_cap=limits.get("attempt_cap", 2),
@@ -466,8 +471,24 @@ class Policy:
             lease_minutes=limits.get("lease_minutes", 30),
         )
 
-    def for_class(self, cls: str) -> str:
-        return self.table.get(cls, "escalate")
+    def for_class(self, cls: str, manager: str = "") -> str:
+        return self.managers.get(manager, {}).get(cls) or self.table.get(cls, "escalate")
+
+    def rule(self, u: Upgrade) -> str:
+        """What the verdict for `u` was looked up under, for the report."""
+        return f"{u.manager} {u.update_class}" if u.manager in self.managers else u.update_class
+
+
+def check_table(where: str, table: dict, extras: frozenset[str] = frozenset()) -> dict:
+    """The update-class entries of a policy table, after rejecting anything else in it."""
+    unknown = {k for k in table if k not in CLASSES and k not in extras}
+    if unknown:
+        raise ValueError(f"unknown update classes in {where}: {sorted(unknown)}")
+    classes = {k: v for k, v in table.items() if k in CLASSES}
+    bad = {v for v in classes.values() if v not in VERDICTS}
+    if bad:
+        raise ValueError(f"unknown verdicts in {where}: {sorted(bad)}")
+    return classes
 
 
 # --- the decision -----------------------------------------------------------------------------
@@ -497,8 +518,9 @@ def decide(
     if Label.REVIEWED_OK in facts.labels:
         policy_verdict, why = "merge", f"{Label.REVIEWED_OK} label"
     else:
-        policy_verdict = worst(*(policy.for_class(c) for c in facts.classes))
-        why = "policy: " + ", ".join(sorted(set(facts.classes)))
+        upgrades = facts.upgrades or (Upgrade("?", "unknown"),)
+        policy_verdict = worst(*(policy.for_class(u.update_class, u.manager) for u in upgrades))
+        why = "policy: " + ", ".join(sorted({policy.rule(u) for u in upgrades}))
 
     if facts.attempts >= policy.attempt_cap:
         return worst(

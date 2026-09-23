@@ -45,6 +45,10 @@ lockfile    = "merge"
 review_when = []                       # ["major"] | ["low-confidence"]  (planned)
 allow_without_checks = false           # merge even when no checks ran at all
 
+# Overrides for upgrades from one manager; a class absent here falls back to [policy].
+[policy.github-actions]
+major       = "merge"
+
 [limits]
 max_merges  = 10                       # per sweep, per repository
 max_repairs = 3                        # agent dispatches per sweep
@@ -55,6 +59,11 @@ strategy = "bot-branch"                # bot-branch | side-pr
 ```
 
 A pull request carrying several upgrades takes the most conservative verdict among them.
+
+A table under `[policy]` is keyed by manager: Renovate's manager name from the metadata marker (`github-actions`,
+`npm`, `cargo`, …), or Dependabot's ecosystem name from its branch (`dependabot/github_actions/...` gives
+`github_actions`). An upgrade whose manager is unknown — an older marker, a body table, a lock-file-only diff —
+uses `[policy]` alone.
 
 Setting `enabled = false` stops all action on the repository. Labelling a single pull request `autopilot/hold` stops
 all action on that pull request.
@@ -125,7 +134,8 @@ works the same way, with no logins as the default (see **Gates**).
 
 Update class comes from the bot, not from prose, in this order:
 
-1. The JSON metadata marker onboarding asks Renovate to emit (`<!-- pr-autopilot:upgrades [...] -->`).
+1. The JSON metadata marker onboarding asks Renovate to emit (`<!-- pr-autopilot:upgrades [...] -->`). It also
+   carries the manager that manager overrides are keyed by.
 2. The update-class column of the bot's own table, whichever of the four known layouts it uses.
 3. Version arithmetic over the two versions the bot printed. A `0.x` minor bump counts as major; a downgrade, an
    unreadable version or a missing side counts as `unknown`.

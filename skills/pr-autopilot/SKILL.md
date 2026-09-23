@@ -52,6 +52,11 @@ Default shape: patch/minor/digest/pin/lockfile merge, major escalates. Tighten w
 `deploys_from_main = true` or `test_confidence` is low — in the extreme, everything escalates and the
 autopilot is only a reporting tool until the checks improve. Loosen only when the checks genuinely justify it.
 
+When the checks justify a looser rule for one ecosystem only, write a manager override rather than loosening the
+whole table — e.g. `[policy.github-actions]` with `major = "merge"` when every workflow that uses the actions runs
+on pull requests. Names are Renovate's manager names (`github-actions`, `npm`, `cargo`, …) and Dependabot's
+ecosystem names (`github_actions`, `npm_and_yarn`, …); write both if both bots run.
+
 ### 3. Deliver one pull request
 
 - `.github/pr-autopilot.toml` — from `templates/pr-autopilot.toml`, with the `[risk]` block filled in as the
@@ -63,7 +68,7 @@ autopilot is only a reporting tool until the checks improve. Loosen only when th
 - Renovate metadata, if `renovate.json` is in reach — this is what makes update classes reliable (ADR 0007):
 
   ```json
-  "prHeader": "<!-- pr-autopilot:upgrades [{{#each upgrades}}{\"depName\":\"{{{depName}}}\",\"updateType\":\"{{{updateType}}}\",\"currentValue\":\"{{{currentValue}}}\",\"newValue\":\"{{{newValue}}}\"}{{#unless @last}},{{/unless}}{{/each}}] -->"
+  "prHeader": "<!-- pr-autopilot:upgrades [{{#each upgrades}}{\"depName\":\"{{{depName}}}\",\"updateType\":\"{{{updateType}}}\",\"currentValue\":\"{{{currentValue}}}\",\"newValue\":\"{{{newValue}}}\",\"manager\":\"{{{manager}}}\"}{{#unless @last}},{{/unless}}{{/each}}] -->"
   ```
 
   `prHeader`, not `prBodyNotes`: notes are compiled once per upgrade with only that upgrade in scope, so the

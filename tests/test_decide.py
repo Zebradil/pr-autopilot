@@ -208,6 +208,34 @@ class TestPolicyFile(unittest.TestCase):
         self.assertEqual((p.max_merges, p.repair_strategy, p.for_class("patch")), (2, "side-pr", "merge"))
 
 
+class TestManagerOverrides(unittest.TestCase):
+    POLICY = Policy.from_toml(b'[policy]\npatch = "merge"\nmajor = "escalate"\n'
+                              b'[policy.github-actions]\nmajor = "merge"\n')
+
+    def test_override_wins_for_its_manager_only(self):
+        actions = pr(upgrades=(Upgrade("actions/checkout", "major", "v5", "v7", "github-actions"),))
+        self.assertEqual(decide(actions, self.POLICY), ("merge", "policy: github-actions major"))
+        npm = pr(upgrades=(Upgrade("react", "major", "18", "19", "npm"),))
+        self.assertEqual(decide(npm, self.POLICY), ("escalate", "policy: major"))
+
+    def test_class_absent_from_override_falls_back(self):
+        self.assertEqual(self.POLICY.for_class("patch", "github-actions"), "merge")
+
+    def test_rejects_bad_override(self):
+        with self.assertRaises(ValueError):
+            Policy.from_toml(b'[policy]\n[policy.npm]\nmajor = "yolo"\n')
+        with self.assertRaises(ValueError):
+            Policy.from_toml(b'[policy]\n[policy.npm]\nallow_without_checks = true\n')
+
+    def test_manager_from_marker_and_dependabot_branch(self):
+        marker = ('<!-- pr-autopilot:upgrades [{"depName":"a","updateType":"major","currentValue":"v1",'
+                  '"newValue":"v2","manager":"github-actions"}] -->')
+        self.assertEqual(parse_upgrades(marker)[0].manager, "github-actions")
+        facts = facts_from_json("o/r", {"number": 1, "headRefName": "dependabot/github_actions/a-2",
+                                        "body": "Bumps [a](u) from 1.0.0 to 2.0.0."})
+        self.assertEqual(facts.upgrades[0].manager, "github_actions")
+
+
 OPERATOR_TOML = b"""
 bots = ["acme-renovate"]
 atlantis = ["acme-atlantis"]

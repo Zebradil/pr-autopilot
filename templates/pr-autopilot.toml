@@ -19,6 +19,11 @@ digest   = "merge"
 pin      = "merge"
 lockfile = "merge"
 
+# Per-manager overrides; a class absent here falls back to [policy]. Renovate manager names
+# (github-actions, npm, ...) or Dependabot ecosystem names (github_actions, npm_and_yarn, ...).
+# [policy.github-actions]
+# major = "merge"
+
 [limits]
 max_merges    = 10   # merges per sweep
 max_repairs   = 3    # agent dispatches per sweep
