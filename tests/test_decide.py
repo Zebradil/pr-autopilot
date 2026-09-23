@@ -15,7 +15,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from pr_autopilot import (  # noqa: E402
-    IGNORE, Facts, GhError, Label, Operator, Policy, PolicyMissing, Result, Upgrade, decide, main, parse_state_comment,
+    IGNORE, Facts, GhError, Label, Operator, Policy, PolicyMissing, Result, Upgrade, decide, main, parse_plan, parse_state_comment,
     parse_upgrades, report, resolve_policy, run_agent, sweep_repo, table, worst,
 )
 
@@ -101,6 +101,21 @@ class TestDecide(unittest.TestCase):
     def test_expired_lease_is_ignored(self):
         past = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
         self.assertEqual(self.verdict(pr(state_comment={"lease_until": past}, checks_failing=("b",))), "repair")
+
+    def test_plan_with_changes_escalates_a_green_pr(self):
+        verdict, reason = decide(pr(plan="24 projects, 13 with changes, 11 with no changes, 0 failed"), POLICY)
+        self.assertEqual(verdict, "escalate")
+        self.assertIn("13 with changes", reason)
+
+    def test_empty_plan_merges(self):
+        self.assertEqual(self.verdict(pr(plan="2 projects, 0 with changes, 2 with no changes, 0 failed")), "merge")
+
+    def test_plan_without_a_summary_escalates(self):
+        self.assertEqual(self.verdict(pr(plan="")), "escalate")
+
+    def test_human_clearance_overrides_a_non_empty_plan(self):
+        facts = pr(labels=frozenset({Label.REVIEWED_OK}), plan="1 project, 1 with changes, 0 with no changes, 0 failed")
+        self.assertEqual(self.verdict(facts), "merge")
 
     def test_human_pr_is_ignored(self):
         self.assertEqual(self.verdict(pr(author="Zebradil")), IGNORE)
@@ -444,6 +459,20 @@ class TestSweepState(unittest.TestCase):
             "body": '<!-- pr-autopilot:state {"attempts": 1} -->',
         }])
         self.assertEqual(state["_comment_id"], "5759954892")
+
+
+    def test_plan_summary_is_read_from_the_last_part_of_the_latest_plan(self):
+        # Shape of a real Atlantis plan too long for one comment.
+        def plan(first, summary):
+            return [{"body": f"Ran Plan for 2 projects:\n\n1. project: `a` dir: `a`\n{first}"},
+                    {"body": f"Continued plan output from previous comment.\n---\n### Plan Summary\n\n{summary}\n\n"
+                             "* :fast_forward: To **apply** all unapplied plans from this Pull Request, comment:"}]
+        old = plan("", "2 projects, 1 with changes, 0 with no changes, 1 failed")
+        new = plan("", "2 projects, 0 with changes, 2 with no changes, 0 failed")
+        self.assertEqual(parse_plan([{"body": "atlantis plan"}, *old, *new]),
+                         "2 projects, 0 with changes, 2 with no changes, 0 failed")
+        self.assertEqual(parse_plan([*old, new[0]]), "")
+        self.assertIsNone(parse_plan([{"body": "atlantis plan"}]))
 
 
 class TestRunAgent(unittest.TestCase):

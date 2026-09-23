@@ -134,6 +134,8 @@ class Facts:
     checks_pending: tuple[str, ...]
     checks_total: int
     state_comment: dict
+    # Summary line of the latest Atlantis plan; "" when that plan has none, None when no plan ran.
+    plan: str | None = None
 
     @property
     def classes(self) -> tuple[str, ...]:
@@ -345,6 +347,28 @@ def parse_state_comment(comments) -> dict:
     return {}
 
 
+PLAN_SUMMARY = re.compile(r"^\d+ projects?, \d+ with changes, \d+ with no changes, \d+ failed$", re.M)
+PLAN_CLEAN = re.compile(r"^\d+ projects?, 0 with changes, \d+ with no changes, 0 failed$")
+
+
+def parse_plan(comments) -> str | None:
+    """The summary of the latest Atlantis plan, which may be split over several comments.
+
+    Only the last comment of a split plan carries the summary, so the first part resets it to "".
+    ponytail: comment author is not checked — Atlantis runs as an arbitrary user whose association
+    is often NONE — so a forged later summary would be believed; pin the Atlantis login in policy
+    if that matters for a public repository.
+    """
+    plan = None
+    for c in comments or []:
+        body = c.get("body", "")
+        if body.startswith("Ran Plan for"):
+            plan = ""
+        if plan is not None and (m := PLAN_SUMMARY.search(body)):
+            plan = m.group(0)
+    return plan
+
+
 def facts_from_json(repo: str, pr: dict) -> Facts:
     failing, pending = check_lists(pr.get("statusCheckRollup"))
     return Facts(
@@ -368,6 +392,7 @@ def facts_from_json(repo: str, pr: dict) -> Facts:
         checks_pending=tuple(pending),
         checks_total=len(pr.get("statusCheckRollup") or []),
         state_comment=parse_state_comment(pr.get("comments")),
+        plan=parse_plan(pr.get("comments")),
     )
 
 
@@ -474,6 +499,13 @@ def decide(
     if not facts.checks_total and not policy.allow_without_checks:
         # An empty check list is not a green one. A repository with no CI has to say so on purpose.
         return worst(policy_verdict, "escalate"), "no checks ran"
+    if (
+        facts.plan is not None
+        and not PLAN_CLEAN.match(facts.plan)
+        and Label.REVIEWED_OK not in facts.labels
+    ):
+        # A non-empty plan means merging changes infrastructure: drift or a behaviour change.
+        return worst(policy_verdict, "escalate"), f"plan: {facts.plan or 'no summary'}"
     return policy_verdict, why
 
 
@@ -948,7 +980,7 @@ def sweep_repo(repo: str, numbers: list[int], policy: Policy, args) -> list[Resu
         if verdict == "escalate" and Label.ESCALATED not in facts.labels:
             if outcome == "no action":
                 escalate(facts, reason, args.dry_run)
-                outcome = "escalated"
+                outcome = "would escalate" if args.dry_run else "escalated"
             else:
                 escalate(facts, f"{outcome}\n\n{reason}", args.dry_run)
 

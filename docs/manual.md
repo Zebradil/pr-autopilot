@@ -139,12 +139,14 @@ A pull request with **no checks at all** escalates rather than merging: an empty
 Bot identity is compared on the bare name, because `gh` spells the same bot `app/renovate`, `renovate[bot]` or
 `renovate` depending on which command produced the payload.
 
-## Gates *(planned)*
+## Gates
 
 A gate is anything beyond green checks that must hold before merging — canonically an infrastructure plan that must
-show no changes. Preferred shape: onboarding adds a repository check that fails on a non-empty plan, so the engine
-only ever reads check status. Fallback for repositories that cannot run plans in CI: the engine parses the plan
-comment for a zero-change line. A non-empty plan is an escalation, not a failure.
+show no changes. A non-empty plan is an escalation, not a failure.
+
+Atlantis is read from its own plan comment; there is nothing to configure. The engine takes the latest plan (a plan
+split over several comments counts as one) and merges only when its summary line reads `0 with changes` and
+`0 failed`. A plan whose summary is missing escalates too. `autopilot/reviewed-ok` overrides a non-empty plan.
 
 ## The agent *(planned)*
 

@@ -66,6 +66,7 @@ In CI, use the action ([`action.yml`](./action.yml)); the [workflow templates](.
 ## Status
 
 Working: facts, verdicts, merging, limits, sticky state, `--dry-run`, the GitHub Action, repair dispatch, the
-onboarding skill. Tested against recorded payloads from real Renovate and Dependabot pull requests.
+Atlantis empty-plan gate, the onboarding skill. Tested against recorded payloads from real Renovate and Dependabot
+pull requests.
 
-Planned: gates (including Atlantis empty-plan), policy-bought advisory reviews.
+Planned: policy-bought advisory reviews.
