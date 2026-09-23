@@ -354,6 +354,9 @@ def parse_state_comment(comments) -> dict:
 PLAN_CHECK = "atlantis/plan"
 PLAN_SUMMARY = re.compile(r"^\d+ projects?, \d+ with changes, \d+ with no changes, \d+ failed$", re.M)
 PLAN_CLEAN = re.compile(r"^\d+ projects?, 0 with changes, \d+ with no changes, 0 failed$")
+# What Atlantis sets on its plan status when the diff touches no project. It posts no plan comment
+# then, so there is nothing to gate on.
+PLAN_NO_PROJECTS = "0/0 projects"
 
 
 def parse_plan(comments, authors: tuple[str, ...] = ()) -> str | None:
@@ -402,6 +405,7 @@ def facts_from_json(repo: str, pr: dict, atlantis: tuple[str, ...] = ()) -> Fact
         state_comment=parse_state_comment(pr.get("comments")),
         plan_check=any(
             (c.get("name") or c.get("context")) == PLAN_CHECK
+            and not (c.get("description") or "").startswith(PLAN_NO_PROJECTS)
             for c in pr.get("statusCheckRollup") or []
         ),
         plan=parse_plan(pr.get("comments"), atlantis),
@@ -701,7 +705,26 @@ def fetch_pr(repo: str, number: int, atlantis: tuple[str, ...] = ()) -> Facts:
         progress(f"  #{number}: mergeability not computed yet, retrying in 3s")
         time.sleep(3)
         pr = gh_json("pr", "view", str(number), "--repo", repo, "--json", PR_FIELDS)
+    add_plan_description(repo, number, pr)
     return facts_from_json(repo, pr, atlantis)
+
+
+def add_plan_description(repo: str, number: int, pr: dict) -> None:
+    """Copy the plan status description, which `gh pr view` omits, into the rollup.
+
+    Any failure leaves it out, and the plan gate then holds as if projects were planned.
+    """
+    plan = [c for c in pr.get("statusCheckRollup") or [] if c.get("context") == PLAN_CHECK]
+    if not plan:
+        return
+    # `gh pr checks` exits non-zero for failing or pending checks but still prints the JSON.
+    out = gh("pr", "checks", str(number), "--repo", repo, "--json", "name,description", check=False)
+    try:
+        described = {c["name"]: c.get("description", "") for c in json.loads(out)}
+    except (json.JSONDecodeError, TypeError, KeyError):
+        return
+    for c in plan:
+        c["description"] = described.get(PLAN_CHECK, "")
 
 
 def list_bot_prs(repo: str, policy: Policy) -> list[int]:

@@ -146,7 +146,8 @@ Bot identity is compared on the bare name, because `gh` spells the same bot `app
 A gate is anything beyond green checks that must hold before merging — canonically an infrastructure plan that must
 show no changes. A non-empty plan is an escalation, not a failure.
 
-A pull request carrying an `atlantis/plan` check is gated on Atlantis; without that check, plan comments are not
+A pull request carrying an `atlantis/plan` check is gated on Atlantis, unless the check reports `0/0 projects` (the diff
+touches no Atlantis project, so no plan comment is posted); without that check, plan comments are not
 read. The engine takes the latest plan comment (a plan split over several comments counts as one) and merges only
 when its summary line reads `0 with changes` and `0 failed`. No plan comment, or one without a summary, escalates. `autopilot/reviewed-ok` overrides a non-empty plan.
 

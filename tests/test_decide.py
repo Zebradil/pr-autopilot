@@ -15,7 +15,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from pr_autopilot import (  # noqa: E402
-    IGNORE, Facts, GhError, Label, Operator, Policy, PolicyMissing, Result, Upgrade, decide, main, parse_plan, parse_state_comment,
+    IGNORE, PLAN_CHECK, Facts, GhError, Label, Operator, Policy, PolicyMissing, Result, Upgrade, decide, facts_from_json, main,
+    parse_plan, parse_state_comment,
     parse_upgrades, report, resolve_policy, run_agent, sweep_repo, table, worst,
 )
 
@@ -119,6 +120,14 @@ class TestDecide(unittest.TestCase):
         verdict, reason = decide(pr(plan_check=True), POLICY)
         self.assertEqual(verdict, "escalate")
         self.assertIn("no Atlantis plan comment", reason)
+
+    def test_plan_check_with_no_projects_does_not_gate(self):
+        rollup = [{"context": PLAN_CHECK, "state": "SUCCESS",
+                   "description": "0/0 projects planned successfully."}]
+        facts = facts_from_json("o/r", {"number": 1, "statusCheckRollup": rollup})
+        self.assertFalse(facts.plan_check)
+        rollup[0]["description"] = "2/2 projects planned successfully."
+        self.assertTrue(facts_from_json("o/r", {"number": 1, "statusCheckRollup": rollup}).plan_check)
 
     def test_plan_comment_is_ignored_without_the_plan_check(self):
         self.assertEqual(self.verdict(pr(plan="1 project, 1 with changes, 0 with no changes, 0 failed")), "merge")
