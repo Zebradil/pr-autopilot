@@ -326,7 +326,7 @@ The file name is the `identity` the workflows ask for.
 
 ```yaml
 issuer: https://token.actions.githubusercontent.com
-subject_pattern: "repo:acme@<owner id>/[^/@]+@[0-9]+:.*"
+subject_pattern: "repo:acme(@<owner id>)?/[^/@]+(@[0-9]+)?:.*"
 claim_pattern:
   repository_owner_id: "<owner id>"
   workflow_ref: "acme/[^/]+/\\.github/workflows/pr-autopilot-(sweep|reactive)\\.yml@refs/heads/main"
@@ -341,8 +341,12 @@ permissions:
   workflows: write
 ```
 
-- `subject_pattern`: GitHub issues subjects with numeric IDs, `repo:acme@1234/web@5678:ref:refs/heads/main`; a
-  pattern in the older `repo:acme/web:…` form matches nothing. The owner ID is `gh api users/<owner> -q .id`.
+- `subject_pattern`: matches both forms GitHub issues. A repository opted into immutable subjects gets numeric IDs,
+  `repo:acme@1234/web@5678:ref:refs/heads/main`; every other repository gets `repo:acme/web:ref:refs/heads/main`.
+  `gh api repos/<owner>/<repo>/actions/oidc/customization/sub` shows which (`use_immutable_subject`). A personal
+  account has no account-wide switch, so a pattern that accepts only one form fails for some repositories. The
+  name-only form does not admit another account: `repository_owner_id` pins the owner regardless. The owner ID is
+  `gh api users/<owner> -q .id`.
 - `workflow_ref`: only the two autopilot workflows on `main` may ask. Without it, any workflow in any repository
   could get a token with these permissions for its own repository. Widen the branch part for repositories whose
   default branch is not `main`.
@@ -399,7 +403,8 @@ Merge the workflow change, then run the sweep by hand with `dry_run` (Actions �
 Common failures, by the message octo-sts returns (the `octo-sts/action` step should show it; not yet observed):
 
 - `trust policy: subject "…" did not match pattern "…"`, or the same for a claim: the policy did not match. Compare
-  `subject_pattern` and `workflow_ref` with the claims in the message; a run from a branch other than `main` fails
+  `subject_pattern` and `workflow_ref` with the claims in the message — a subject without `@<id>` parts means the
+  repository has not opted into immutable subjects; a run from a branch other than `main` fails
   `workflow_ref` by design.
 - `unable to find trust policy for "pr-autopilot"`: the file is missing from the `.github` repository, or the App is
   not installed there.
