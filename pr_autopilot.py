@@ -631,6 +631,7 @@ class Operator:
     default: str | None = (
         None  # preset for a repository with no entry and no in-repo file
     )
+    octo_sts: str | None = None  # domain of the operator's octo-sts; onboarding wires workflows to it
     base_dir: str = "."
 
     @staticmethod
@@ -661,6 +662,7 @@ class Operator:
             presets=presets,
             repos=repos,
             default=default,
+            octo_sts=d.get("octo_sts"),
             base_dir=os.path.dirname(os.path.abspath(path)),
         )
 
@@ -1155,6 +1157,12 @@ pr-autopilot $version is installed at $root. Paths in the instructions (`templat
 
 """
 
+ONBOARD_OCTO_STS = """\
+The operator runs octo-sts at `$domain`: wire the workflows to it as `docs/manual.md`, "octo-sts", shows, instead
+of the App-key and token inputs of the templates.
+
+"""
+
 
 def onboard(agent: str | None) -> int:
     """Hand the terminal to an interactive agent primed with the onboarding skill (ADR 0009)."""
@@ -1163,9 +1171,15 @@ def onboard(agent: str | None) -> int:
         skill = f.read()
     if skill.startswith("---"):
         skill = skill.split("---", 2)[2].lstrip()
-    prompt = string.Template(ONBOARD_HEADER).substitute(
+    header = string.Template(ONBOARD_HEADER).substitute(
         version=__version__, root=root, engine=os.path.join(root, "pr_autopilot.py")
-    ) + skill
+    )
+    operator_path = default_operator_path()
+    if os.path.exists(operator_path):
+        domain = Operator.load(operator_path).octo_sts
+        if domain:
+            header += string.Template(ONBOARD_OCTO_STS).substitute(domain=domain)
+    prompt = header + skill
     if not agent:
         print(prompt)
         print(
