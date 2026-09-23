@@ -95,6 +95,7 @@ allowlist, so a malformed file fails every sweep. Template: [`templates/config.t
 
 ```toml
 bots = ["acme-renovate"]        # default allowlist for every policy that does not set `bots`
+atlantis = ["acme-atlantis"]    # default Atlantis logins for every policy that does not set `atlantis`
 default = "infra"               # preset for a repository nothing else governs; omit to skip those
 
 [presets.infra.policy]          # a preset is a whole policy body
@@ -117,7 +118,8 @@ entry's `preset`, the in-repo file, the operator file's `default`. A repository 
 message. `default` applies to real runs too, so setting it is the operator's opt-in for every repository swept.
 
 A policy may set its own `bots = [...]`; otherwise the operator file's list applies, and without an operator file
-the default is `renovate` and `dependabot`. Names compare on the bare login (see **Facts**).
+the default is `renovate` and `dependabot`. Names compare on the bare login (see **Facts**). `atlantis = [...]`
+works the same way, with no logins as the default (see **Gates**).
 
 ## Facts
 
@@ -144,9 +146,13 @@ Bot identity is compared on the bare name, because `gh` spells the same bot `app
 A gate is anything beyond green checks that must hold before merging — canonically an infrastructure plan that must
 show no changes. A non-empty plan is an escalation, not a failure.
 
-Atlantis is read from its own plan comment; there is nothing to configure. The engine takes the latest plan (a plan
-split over several comments counts as one) and merges only when its summary line reads `0 with changes` and
-`0 failed`. A plan whose summary is missing escalates too. `autopilot/reviewed-ok` overrides a non-empty plan.
+A pull request carrying an `atlantis/plan` check is gated on Atlantis; without that check, plan comments are not
+read. The engine takes the latest plan comment (a plan split over several comments counts as one) and merges only
+when its summary line reads `0 with changes` and `0 failed`. No plan comment, or one without a summary, escalates. `autopilot/reviewed-ok` overrides a non-empty plan.
+
+`atlantis = [...]` lists the logins Atlantis comments as; plan comments by anyone else are ignored. Unset, any
+commenter's plan counts, so anyone able to comment could post a clean summary. Set it on any repository where
+people outside the team can comment.
 
 ## The agent *(planned)*
 

@@ -134,6 +134,8 @@ class Facts:
     checks_pending: tuple[str, ...]
     checks_total: int
     state_comment: dict
+    # The repository is gated on Atlantis; only then is `plan` read.
+    plan_check: bool = False
     # Summary line of the latest Atlantis plan; "" when that plan has none, None when no plan ran.
     plan: str | None = None
 
@@ -347,20 +349,26 @@ def parse_state_comment(comments) -> dict:
     return {}
 
 
+# ponytail: Atlantis's default status name; a server run with another --vcs-status-name needs this
+# in policy.
+PLAN_CHECK = "atlantis/plan"
 PLAN_SUMMARY = re.compile(r"^\d+ projects?, \d+ with changes, \d+ with no changes, \d+ failed$", re.M)
 PLAN_CLEAN = re.compile(r"^\d+ projects?, 0 with changes, \d+ with no changes, 0 failed$")
 
 
-def parse_plan(comments) -> str | None:
+def parse_plan(comments, authors: tuple[str, ...] = ()) -> str | None:
     """The summary of the latest Atlantis plan, which may be split over several comments.
 
     Only the last comment of a split plan carries the summary, so the first part resets it to "".
-    ponytail: comment author is not checked — Atlantis runs as an arbitrary user whose association
-    is often NONE — so a forged later summary would be believed; pin the Atlantis login in policy
-    if that matters for a public repository.
+    With no `authors`, any commenter counts: Atlantis runs as an ordinary user whose association is
+    often NONE, so there is nothing else to tell it apart by, and anyone able to comment could post
+    a clean summary.
     """
+    trusted = {bot_name(a) for a in authors}
     plan = None
     for c in comments or []:
+        if trusted and bot_name((c.get("author") or {}).get("login", "")) not in trusted:
+            continue
         body = c.get("body", "")
         if body.startswith("Ran Plan for"):
             plan = ""
@@ -369,7 +377,7 @@ def parse_plan(comments) -> str | None:
     return plan
 
 
-def facts_from_json(repo: str, pr: dict) -> Facts:
+def facts_from_json(repo: str, pr: dict, atlantis: tuple[str, ...] = ()) -> Facts:
     failing, pending = check_lists(pr.get("statusCheckRollup"))
     return Facts(
         repo=repo,
@@ -392,7 +400,11 @@ def facts_from_json(repo: str, pr: dict) -> Facts:
         checks_pending=tuple(pending),
         checks_total=len(pr.get("statusCheckRollup") or []),
         state_comment=parse_state_comment(pr.get("comments")),
-        plan=parse_plan(pr.get("comments")),
+        plan_check=any(
+            (c.get("name") or c.get("context")) == PLAN_CHECK
+            for c in pr.get("statusCheckRollup") or []
+        ),
+        plan=parse_plan(pr.get("comments"), atlantis),
     )
 
 
@@ -403,6 +415,7 @@ def facts_from_json(repo: str, pr: dict) -> Facts:
 class Policy:
     enabled: bool = True
     bots: tuple[str, ...] = DEFAULT_BOTS
+    atlantis: tuple[str, ...] = ()
     table: dict = dataclasses.field(default_factory=dict)
     max_merges: int = 10
     max_repairs: int = 3
@@ -412,11 +425,13 @@ class Policy:
     lease_minutes: int = 30
 
     @staticmethod
-    def from_toml(raw: bytes, default_bots: tuple[str, ...] = DEFAULT_BOTS) -> "Policy":
-        return Policy.from_dict(tomllib.loads(raw.decode()), default_bots)
+    def from_toml(raw: bytes, defaults: Operator | None = None) -> "Policy":
+        return Policy.from_dict(tomllib.loads(raw.decode()), defaults)
 
     @staticmethod
-    def from_dict(d: dict, default_bots: tuple[str, ...] = DEFAULT_BOTS) -> "Policy":
+    def from_dict(d: dict, defaults: Operator | None = None) -> "Policy":
+        """`defaults` supplies the operator's `bots` and `atlantis` to a policy that omits them."""
+        defaults = defaults or Operator()
         if "policy" not in d:
             raise ValueError(
                 "no [policy] table; an operator file goes in --config or $PR_AUTOPILOT_CONFIG"
@@ -434,7 +449,8 @@ class Policy:
         limits = d.get("limits") or {}
         return Policy(
             enabled=d.get("enabled", True),
-            bots=tuple(d.get("bots") or default_bots),
+            bots=tuple(d.get("bots") or defaults.bots),
+            atlantis=tuple(d.get("atlantis") or defaults.atlantis),
             table=table,
             max_merges=limits.get("max_merges", 10),
             max_repairs=limits.get("max_repairs", 3),
@@ -500,11 +516,14 @@ def decide(
         # An empty check list is not a green one. A repository with no CI has to say so on purpose.
         return worst(policy_verdict, "escalate"), "no checks ran"
     if (
-        facts.plan is not None
-        and not PLAN_CLEAN.match(facts.plan)
+        facts.plan_check
+        and not PLAN_CLEAN.match(facts.plan or "")
         and Label.REVIEWED_OK not in facts.labels
     ):
         # A non-empty plan means merging changes infrastructure: drift or a behaviour change.
+        # A missing one means nothing proves otherwise.
+        if facts.plan is None:
+            return worst(policy_verdict, "escalate"), f"{PLAN_CHECK} ran, no Atlantis plan comment"
         return worst(policy_verdict, "escalate"), f"plan: {facts.plan or 'no summary'}"
     return policy_verdict, why
 
@@ -578,6 +597,7 @@ class Operator:
     """The operator's own file: bot allowlist, named presets, and the fleet with what governs each repo."""
 
     bots: tuple[str, ...] = DEFAULT_BOTS
+    atlantis: tuple[str, ...] = ()
     presets: dict = dataclasses.field(default_factory=dict)
     repos: dict = dataclasses.field(
         default_factory=dict
@@ -611,6 +631,7 @@ class Operator:
             )
         return Operator(
             bots=tuple(d.get("bots") or DEFAULT_BOTS),
+            atlantis=tuple(d.get("atlantis") or ()),
             presets=presets,
             repos=repos,
             default=default,
@@ -620,11 +641,11 @@ class Operator:
     def preset(self, name: str) -> Policy:
         if name not in self.presets:
             raise ValueError(f"unknown preset {name!r}; known: {sorted(self.presets)}")
-        return Policy.from_dict(self.presets[name], self.bots)
+        return Policy.from_dict(self.presets[name], self)
 
     def policy_file(self, path: str) -> Policy:
         with open(os.path.join(self.base_dir, path), "rb") as fh:
-            return Policy.from_toml(fh.read(), self.bots)
+            return Policy.from_toml(fh.read(), self)
 
 
 def default_operator_path() -> str:
@@ -641,7 +662,7 @@ def resolve_policy(
     """Explicit CLI choice first, then the operator's entry for the repo, the in-repo file, the operator's default."""
     if policy_file:
         with open(policy_file, "rb") as fh:
-            return Policy.from_toml(fh.read(), operator.bots)
+            return Policy.from_toml(fh.read(), operator)
     if preset:
         return operator.preset(preset)
     entry = operator.repos.get(repo) or {}
@@ -650,7 +671,7 @@ def resolve_policy(
     if "preset" in entry:
         return operator.preset(entry["preset"])
     try:
-        return fetch_policy(repo, operator.bots)
+        return fetch_policy(repo, operator)
     except PolicyMissing:
         if not operator.default:
             raise
@@ -661,7 +682,7 @@ def resolve_policy(
     return operator.preset(operator.default)
 
 
-def fetch_policy(repo: str, default_bots: tuple[str, ...] = DEFAULT_BOTS) -> Policy:
+def fetch_policy(repo: str, defaults: Operator | None = None) -> Policy:
     try:
         blob = gh_json("api", f"repos/{repo}/contents/{POLICY_PATH}")
     except GhError as err:
@@ -670,17 +691,17 @@ def fetch_policy(repo: str, default_bots: tuple[str, ...] = DEFAULT_BOTS) -> Pol
         if "404" in str(err) or "Not Found" in str(err):
             raise PolicyMissing(str(err)) from err
         raise
-    return Policy.from_toml(base64.b64decode(blob["content"]), default_bots)
+    return Policy.from_toml(base64.b64decode(blob["content"]), defaults)
 
 
-def fetch_pr(repo: str, number: int) -> Facts:
+def fetch_pr(repo: str, number: int, atlantis: tuple[str, ...] = ()) -> Facts:
     pr = gh_json("pr", "view", str(number), "--repo", repo, "--json", PR_FIELDS)
     if pr.get("mergeable") == "UNKNOWN":
         # GitHub computes mergeability lazily: the first request triggers it, the second sees it.
         progress(f"  #{number}: mergeability not computed yet, retrying in 3s")
         time.sleep(3)
         pr = gh_json("pr", "view", str(number), "--repo", repo, "--json", PR_FIELDS)
-    return facts_from_json(repo, pr)
+    return facts_from_json(repo, pr, atlantis)
 
 
 def list_bot_prs(repo: str, policy: Policy) -> list[int]:
@@ -955,7 +976,7 @@ def sweep_repo(repo: str, numbers: list[int], policy: Policy, args) -> list[Resu
     results: list[Result] = []
     merged = repairs = 0
     for i, number in enumerate(numbers, 1):
-        facts = fetch_pr(repo, number)
+        facts = fetch_pr(repo, number, policy.atlantis)
         verdict, reason = decide(facts, policy)
         outcome = "no action"
 
@@ -1187,7 +1208,7 @@ def main(argv=None) -> int:
         error("gh is not installed")
         return 2
 
-    # Loaded even for a single repository: its `bots` is the default allowlist for every policy.
+    # Loaded even for a single repository: its `bots` and `atlantis` are defaults for every policy.
     operator_path = args.config or default_operator_path()
     try:
         operator = (

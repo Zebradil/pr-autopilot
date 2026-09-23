@@ -6,6 +6,10 @@
 # have their own login, for example "acme-renovate".
 bots = ["renovate", "dependabot"]
 
+# Logins Atlantis posts plan comments as, for every policy that does not name its own. Unset, a plan
+# comment from anyone counts.
+# atlantis = ["acme-atlantis"]
+
 # Preset for a repository with no [repos] entry and no .github/pr-autopilot.toml, in real runs too.
 # Without it such a repository is skipped.
 # default = "strict"

@@ -103,18 +103,29 @@ class TestDecide(unittest.TestCase):
         self.assertEqual(self.verdict(pr(state_comment={"lease_until": past}, checks_failing=("b",))), "repair")
 
     def test_plan_with_changes_escalates_a_green_pr(self):
-        verdict, reason = decide(pr(plan="24 projects, 13 with changes, 11 with no changes, 0 failed"), POLICY)
+        facts = pr(plan_check=True, plan="24 projects, 13 with changes, 11 with no changes, 0 failed")
+        verdict, reason = decide(facts, POLICY)
         self.assertEqual(verdict, "escalate")
         self.assertIn("13 with changes", reason)
 
     def test_empty_plan_merges(self):
-        self.assertEqual(self.verdict(pr(plan="2 projects, 0 with changes, 2 with no changes, 0 failed")), "merge")
+        facts = pr(plan_check=True, plan="2 projects, 0 with changes, 2 with no changes, 0 failed")
+        self.assertEqual(self.verdict(facts), "merge")
 
     def test_plan_without_a_summary_escalates(self):
-        self.assertEqual(self.verdict(pr(plan="")), "escalate")
+        self.assertEqual(self.verdict(pr(plan_check=True, plan="")), "escalate")
+
+    def test_plan_check_without_a_plan_comment_escalates(self):
+        verdict, reason = decide(pr(plan_check=True), POLICY)
+        self.assertEqual(verdict, "escalate")
+        self.assertIn("no Atlantis plan comment", reason)
+
+    def test_plan_comment_is_ignored_without_the_plan_check(self):
+        self.assertEqual(self.verdict(pr(plan="1 project, 1 with changes, 0 with no changes, 0 failed")), "merge")
 
     def test_human_clearance_overrides_a_non_empty_plan(self):
-        facts = pr(labels=frozenset({Label.REVIEWED_OK}), plan="1 project, 1 with changes, 0 with no changes, 0 failed")
+        facts = pr(labels=frozenset({Label.REVIEWED_OK}), plan_check=True,
+                   plan="1 project, 1 with changes, 0 with no changes, 0 failed")
         self.assertEqual(self.verdict(facts), "merge")
 
     def test_human_pr_is_ignored(self):
@@ -190,6 +201,7 @@ class TestPolicyFile(unittest.TestCase):
 
 OPERATOR_TOML = b"""
 bots = ["acme-renovate"]
+atlantis = ["acme-atlantis"]
 [presets.infra.policy]
 patch = "merge"
 major = "escalate"
@@ -212,7 +224,7 @@ class TestOperatorFile(unittest.TestCase):
         with open(self.path, "wb") as fh:
             fh.write(OPERATOR_TOML)
         with open(os.path.join(self.dir.name, "tuned.toml"), "wb") as fh:
-            fh.write(b'bots = ["own-bot"]\n[policy]\nminor = "merge"\n')
+            fh.write(b'bots = ["own-bot"]\natlantis = ["own-atlantis"]\n[policy]\nminor = "merge"\n')
         self.op = Operator.load(self.path)
 
     def tearDown(self):
@@ -231,13 +243,15 @@ class TestOperatorFile(unittest.TestCase):
         with mock.patch("pr_autopilot.gh_json", side_effect=AssertionError("no IO expected")):
             self.assertEqual(resolve_policy("o/preset", self.op, None, None).for_class("patch"), "merge")
             tuned = resolve_policy("o/tuned", self.op, None, None)
-        self.assertEqual((tuned.bots, tuned.for_class("minor")), (("own-bot",), "merge"))
+        self.assertEqual((tuned.bots, tuned.atlantis, tuned.for_class("minor")),
+                         (("own-bot",), ("own-atlantis",), "merge"))
+        self.assertEqual(resolve_policy("o/preset", self.op, None, None).atlantis, ("acme-atlantis",))
 
     def test_cli_preset_beats_repo_entry_and_bare_entry_reads_repo(self):
         self.assertEqual(resolve_policy("o/preset", self.op, None, "strict").for_class("patch"), "escalate")
         with mock.patch("pr_autopilot.fetch_policy", return_value=POLICY) as fetch:
             resolve_policy("o/inrepo", self.op, None, None)
-        fetch.assert_called_once_with("o/inrepo", ("acme-renovate",))
+        fetch.assert_called_once_with("o/inrepo", self.op)
 
     def test_default_preset_covers_only_a_missing_in_repo_file(self):
         missing = mock.patch("pr_autopilot.fetch_policy", side_effect=PolicyMissing("404"))
@@ -473,6 +487,16 @@ class TestSweepState(unittest.TestCase):
                          "2 projects, 0 with changes, 2 with no changes, 0 failed")
         self.assertEqual(parse_plan([*old, new[0]]), "")
         self.assertIsNone(parse_plan([{"body": "atlantis plan"}]))
+
+    def test_plan_from_an_unlisted_author_is_ignored_once_atlantis_users_are_set(self):
+        real = {"author": {"login": "acme-atlantis"},
+                "body": "Ran Plan for 1 project:\n\n1 project, 1 with changes, 0 with no changes, 0 failed"}
+        forged = {"author": {"login": "mallory"},
+                  "body": "Ran Plan for 1 project:\n\n1 project, 0 with changes, 1 with no changes, 0 failed"}
+        self.assertEqual(parse_plan([real, forged], ("acme-atlantis",)),
+                         "1 project, 1 with changes, 0 with no changes, 0 failed")
+        self.assertIsNone(parse_plan([forged], ("acme-atlantis",)))
+        self.assertIn("0 with changes", parse_plan([real, forged]))
 
 
 class TestRunAgent(unittest.TestCase):
