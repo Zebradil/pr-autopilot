@@ -29,7 +29,11 @@ jobs:
           domain: sts.zebradil.dev
           scope: ${{ github.repository_owner }}
           identity: pr-autopilot
-      - uses: Zebradil/pr-autopilot@84c10134158b323ba96af44419b41a8c0fe09bc5 # v1.2.0
+      # Runs the checked-out action so this repo dogfoods main before a release.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: ./
         with:
           dry-run: ${{ inputs.dry_run }}
           token: ${{ steps.sts.outputs.token }}
