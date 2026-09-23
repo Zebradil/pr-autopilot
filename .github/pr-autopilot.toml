@@ -19,6 +19,11 @@ major    = "escalate"
 digest   = "merge"
 pin      = "merge"
 
+# Action majors only touch CI, and the `action` job runs every workflow change before merge,
+# so a breaking action shows up as a red check rather than a broken release.
+[policy.github-actions]
+major = "merge"
+
 [limits]
 max_merges    = 10
 max_repairs   = 3
