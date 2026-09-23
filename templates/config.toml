@@ -10,6 +10,10 @@ bots = ["renovate", "dependabot"]
 # comment from anyone counts.
 # atlantis = ["acme-atlantis"]
 
+# Domain of a self-hosted octo-sts. When set, `pr-autopilot onboard` wires workflows to exchange their OIDC token
+# there instead of reading App keys or a token from repository secrets. See docs/manual.md, "octo-sts".
+# octo_sts = "sts.example.com"
+
 # Preset for a repository with no [repos] entry and no .github/pr-autopilot.toml, in real runs too.
 # Without it such a repository is skipped.
 # default = "strict"

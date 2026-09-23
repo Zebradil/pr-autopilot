@@ -98,6 +98,11 @@ for a personal repository or early testing, not the recommendation. Either ident
 because `GITHUB_TOKEN` cannot approve. The steps for creating the App and the permissions it needs are in
 `docs/manual.md`, "Identity" — send the operator there rather than reciting them.
 
+If the prompt names an octo-sts domain, there is no credential to set: wire the delivered workflows to it as
+`docs/manual.md`, "octo-sts", shows — `id-token: write`, the `octo-sts/action` step, its token as the action's only
+identity input — and drop the App-key and token inputs. Check that the repository's default branch matches the
+`workflow_ref` in that section's policy; if not, tell the operator the policy needs widening.
+
 ### 4. Verify
 
 `pr_autopilot.py sweep --repo <owner/repo> --policy .github/pr-autopilot.toml --dry-run` and read the verdict

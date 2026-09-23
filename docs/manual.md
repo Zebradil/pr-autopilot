@@ -106,6 +106,7 @@ allowlist, so a malformed file fails every sweep. Template: [`templates/config.t
 bots = ["acme-renovate"]        # default allowlist for every policy that does not set `bots`
 atlantis = ["acme-atlantis"]    # default Atlantis logins for every policy that does not set `atlantis`
 default = "infra"               # preset for a repository nothing else governs; omit to skip those
+octo_sts = "sts.acme.dev"       # onboarding wires workflows to this octo-sts (see **Identity**)
 
 [presets.infra.policy]          # a preset is a whole policy body
 patch = "merge"
@@ -192,6 +193,8 @@ The `Zebradil/pr-autopilot` action takes either, and the workflow templates wire
 `PR_AUTOPILOT_CLIENT_ID` repository **variable** and the `PR_AUTOPILOT_APP_PRIVATE_KEY` secret and it mints an
 installation token per run, or leave the variable unset and it falls back to the `PR_AUTOPILOT_TOKEN` secret.
 
+Across many repositories, the octo-sts path below removes the per-repository secrets altogether.
+
 ### Permissions
 
 Repository permissions, both for a GitHub App and for a fine-grained personal access token:
@@ -240,6 +243,66 @@ Then, in each governed repository (Settings → Secrets and variables → Action
 Both can live on the organisation instead of on each repository if more than one is governed.
 
 The App also has to be allowed through whatever guards the default branch — see **Branch rules** below.
+
+### octo-sts
+
+A personal account has no account-level secrets, so the App path puts a copy of the private key in every governed
+repository: onboarding needs a secrets step, rotation touches every repository, and write access to any one of them
+is enough to take the key. [octo-sts](https://github.com/octo-sts/app) holds the key instead and exchanges a
+workflow's GitHub OIDC token for an installation token ([ADR 0017](./adr/0017-tokens-come-from-octo-sts.md)).
+
+- Run an octo-sts instance with the App's private key; the public `octo-sts.dev` acts as its own App, not yours.
+  Scoping a token to the calling repository needs `caller_repository_only`, which the fork at
+  [Zebradil/octo-sts](https://github.com/Zebradil/octo-sts) adds and upstream does not have yet.
+- Install the App on **All repositories**, so a new repository needs no setup. The App needs Contents read at least,
+  because octo-sts reads policies through it.
+- Commit one trust policy to the account's `.github` repository, `.github/chainguard/pr-autopilot.sts.yaml`:
+
+  ```yaml
+  issuer: https://token.actions.githubusercontent.com
+  subject_pattern: "repo:acme@<owner id>/[^/@]+@[0-9]+:.*"
+  claim_pattern:
+    repository_owner_id: "<owner id>"
+    workflow_ref: "acme/[^/]+/\\.github/workflows/pr-autopilot-(sweep|reactive)\\.yml@refs/heads/main"
+  app: <app_name in the octo-sts config>
+  caller_repository_only: true
+  permissions:
+    contents: write
+    pull_requests: write
+    checks: read
+    statuses: read
+    issues: write
+    workflows: write
+  ```
+
+  GitHub issues subjects with numeric IDs (`repo:acme@1234/web@5678:ref:refs/heads/main`); the owner ID is
+  `gh api users/<owner> -q .id`. `workflow_ref` keeps every other workflow from asking; widen it for repositories
+  whose default branch is not `main`. `app:` picks the App when octo-sts holds more than one.
+- Set `octo_sts` in the operator file, and onboarding wires the workflows like this instead of the template's
+  identity inputs:
+
+  ```yaml
+  permissions:
+    contents: write
+    pull-requests: write
+    id-token: write
+
+  jobs:
+    sweep:
+      steps:
+        - uses: octo-sts/action@f603d3be9d8dd9871a265776e625a27b00effe05 # v1.1.1
+          id: sts
+          with:
+            domain: sts.acme.dev
+            scope: ${{ github.repository_owner }}
+            identity: pr-autopilot
+        - uses: Zebradil/pr-autopilot@vX.Y.Z
+          with:
+            token: ${{ steps.sts.outputs.token }}
+  ```
+
+  `scope` is the owner, not `owner/repo`: the policy lives in the owner's `.github` repository, and
+  `caller_repository_only` refuses repository scopes. octo-sts caches policies for five minutes.
 
 ### The token shortcut
 
