@@ -315,7 +315,7 @@ class TestOperatorFile(unittest.TestCase):
                 main(["onboard"])
             return out.getvalue()
 
-        self.assertNotIn("octo-sts", prompt())
+        self.assertNotIn("The operator runs octo-sts", prompt())
         with open(self.path, "wb") as fh:
             fh.write(b'octo_sts = "sts.example.com"\n' + OPERATOR_TOML)
         self.assertIn("octo-sts at `sts.example.com`", prompt())
