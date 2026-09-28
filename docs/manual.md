@@ -212,6 +212,7 @@ Repository permissions, both for a GitHub App and for a fine-grained personal ac
 | Metadata        | Read           | Mandatory; GitHub selects it automatically.                                    |
 | Contents        | Read and write | Reads `.github/pr-autopilot.toml`; merges, and deletes the merged branch.      |
 | Pull requests   | Read and write | Reads bot pull requests, approves, merges, labels, writes the state comment.   |
+| Actions         | Read           | `gh` reads each check run's workflow name (`checkSuite.workflowRun`).          |
 | Checks          | Read           | The check-run half of the check rollup a verdict is computed from.             |
 | Commit statuses | Read           | The legacy-status half of the same rollup.                                     |
 | Issues          | Read and write | `pr_autopilot.py labels` creates labels, which are an Issues endpoint.         |
@@ -335,6 +336,7 @@ caller_repository_only: true
 permissions:
   contents: write
   pull_requests: write
+  actions: read
   checks: read
   statuses: read
   issues: write
