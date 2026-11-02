@@ -103,6 +103,18 @@ If the prompt names an octo-sts domain, there is no credential to set: wire the 
 identity input — and drop the App-key and token inputs. Check that the repository's default branch matches the
 `workflow_ref` in that section's policy; if not, tell the operator the policy needs widening.
 
+The pull request description ends with the steps left to the operator before the first sweep can act, in order, and
+your closing message after opening the pull request repeats them. Link the App in the step that installs it: its
+installation page, `https://github.com/apps/<slug>/installations/new`, when the prompt names the operator's App;
+otherwise `docs/manual.md`, "Creating the App". Include only the steps this repository still needs:
+
+- If the repository's owner is not the account that owns the App, the App must first be made installable on any
+  account (the App's settings, "Make public").
+- Install the App on the repository; with octo-sts, on the owner's `.github` repository too.
+- With octo-sts and a new owner, add that owner to the service's App file and add the trust policy to the owner's
+  `.github` repository (`docs/manual.md`, "octo-sts", steps 2 and 3).
+- After merging, run the sweep once by hand with `dry_run` to prove the identity works.
+
 ### 4. Verify
 
 `pr_autopilot.py sweep --repo <owner/repo> --policy .github/pr-autopilot.toml --dry-run` and read the verdict

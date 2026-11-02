@@ -14,6 +14,10 @@ bots = ["renovate", "dependabot"]
 # there instead of reading App keys or a token from repository secrets. See docs/manual.md, "octo-sts".
 # octo_sts = "sts.example.com"
 
+# Slug of the GitHub App the autopilot runs as, from https://github.com/apps/<slug>. When set, `pr-autopilot onboard`
+# links its installation page in the onboarding pull request and in the steps left to the operator.
+# app = "acme-pr-autopilot"
+
 # Preset for a repository with no [repos] entry and no .github/pr-autopilot.toml, in real runs too.
 # Without it such a repository is skipped.
 # default = "strict"

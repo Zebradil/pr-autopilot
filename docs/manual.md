@@ -107,6 +107,7 @@ bots = ["acme-renovate"]        # default allowlist for every policy that does n
 atlantis = ["acme-atlantis"]    # default Atlantis logins for every policy that does not set `atlantis`
 default = "infra"               # preset for a repository nothing else governs; omit to skip those
 octo_sts = "sts.acme.dev"       # onboarding wires workflows to this octo-sts (see **Identity**)
+app = "acme-pr-autopilot"       # onboarding links this App's installation page (see **Identity**)
 
 [presets.infra.policy]          # a preset is a whole policy body
 patch = "merge"

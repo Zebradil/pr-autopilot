@@ -632,6 +632,7 @@ class Operator:
         None  # preset for a repository with no entry and no in-repo file
     )
     octo_sts: str | None = None  # domain of the operator's octo-sts; onboarding wires workflows to it
+    app: str | None = None  # slug of the operator's GitHub App; onboarding links its installation page
     base_dir: str = "."
 
     @staticmethod
@@ -663,6 +664,7 @@ class Operator:
             repos=repos,
             default=default,
             octo_sts=d.get("octo_sts"),
+            app=d.get("app"),
             base_dir=os.path.dirname(os.path.abspath(path)),
         )
 
@@ -1163,6 +1165,11 @@ of the App-key and token inputs of the templates.
 
 """
 
+ONBOARD_APP = """\
+The operator's GitHub App is `$app`; its installation page is https://github.com/apps/$app/installations/new.
+
+"""
+
 
 def onboard(agent: str | None) -> int:
     """Hand the terminal to an interactive agent primed with the onboarding skill (ADR 0009)."""
@@ -1176,9 +1183,11 @@ def onboard(agent: str | None) -> int:
     )
     operator_path = default_operator_path()
     if os.path.exists(operator_path):
-        domain = Operator.load(operator_path).octo_sts
-        if domain:
-            header += string.Template(ONBOARD_OCTO_STS).substitute(domain=domain)
+        operator = Operator.load(operator_path)
+        if operator.octo_sts:
+            header += string.Template(ONBOARD_OCTO_STS).substitute(domain=operator.octo_sts)
+        if operator.app:
+            header += string.Template(ONBOARD_APP).substitute(app=operator.app)
     prompt = header + skill
     if not agent:
         print(prompt)
