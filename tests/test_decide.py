@@ -307,7 +307,7 @@ class TestOperatorFile(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "default.*nope"):
             Operator.load(self.path)
 
-    def test_onboarding_prompt_names_the_operators_octo_sts(self):
+    def test_onboarding_prompt_names_the_operators_octo_sts_and_app(self):
         def prompt():
             with mock.patch.dict(os.environ, {"PR_AUTOPILOT_CONFIG": self.path}), \
                  contextlib.redirect_stdout(io.StringIO()) as out, \
@@ -316,9 +316,11 @@ class TestOperatorFile(unittest.TestCase):
             return out.getvalue()
 
         self.assertNotIn("The operator runs octo-sts", prompt())
+        self.assertNotIn("The operator's GitHub App", prompt())
         with open(self.path, "wb") as fh:
-            fh.write(b'octo_sts = "sts.example.com"\n' + OPERATOR_TOML)
+            fh.write(b'octo_sts = "sts.example.com"\napp = "acme-pr-autopilot"\n' + OPERATOR_TOML)
         self.assertIn("octo-sts at `sts.example.com`", prompt())
+        self.assertIn("https://github.com/apps/acme-pr-autopilot/installations/new", prompt())
 
     def test_legacy_repo_list(self):
         with open(self.path, "wb") as fh:
