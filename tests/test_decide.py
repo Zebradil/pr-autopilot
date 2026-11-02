@@ -551,6 +551,36 @@ class TestSweepState(unittest.TestCase):
         self.assertIn("0 with changes", parse_plan([real, forged]))
 
 
+class TestBehindBase(unittest.TestCase):
+    """A merge verdict left behind by an earlier merge in the same sweep updates its branch."""
+
+    def merge(self, update_error: str = "") -> tuple[str, list[tuple[str, ...]]]:
+        calls = []
+
+        def gh(*args, check=True):
+            calls.append(args)
+            if args[:2] == ("pr", "update-branch") and update_error:
+                raise GhError(update_error)
+            if args[:2] == ("pr", "view"):
+                return '{"state": "OPEN", "mergeStateStatus": "BEHIND"}'
+            return ""
+
+        args = mock.Mock(dry_run=False, agent="")
+        with mock.patch("pr_autopilot.fetch_pr", return_value=pr()), \
+                mock.patch("pr_autopilot.gh", side_effect=gh), \
+                contextlib.redirect_stderr(io.StringIO()):
+            return sweep_repo("o/r", [1], POLICY, args)[0].outcome, calls
+
+    def test_behind_branch_is_updated(self):
+        outcome, calls = self.merge()
+        self.assertIn(("pr", "update-branch", "1", "--repo", "o/r"), calls)
+        self.assertEqual(outcome, "behind base; branch updated, merges once checks pass")
+
+    def test_conflicting_update_is_reported(self):
+        outcome, _ = self.merge(update_error="merge conflict between base and head")
+        self.assertEqual(outcome, "not merged: BEHIND; update-branch failed: merge conflict between base and head")
+
+
 class TestRunAgent(unittest.TestCase):
     def run_agent(self, command: str, timeout: float) -> tuple[str | None, str, float]:
         err = io.StringIO()

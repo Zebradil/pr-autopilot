@@ -463,6 +463,7 @@ What has to hold for the autopilot to merge:
 | ----------------------------------- | ---------------------------------------------------------- |
 | Require a pull request, N approvals | Fine — the App's review counts, and the bot is the author.  |
 | Require status checks to pass       | Fine, and wanted ([ADR 0008](./adr/0008-checks-are-the-contract.md)). |
+| Require branches to be up to date   | Fine — a pull request left behind by an earlier merge gets the base merged in (`gh pr update-branch`) and merges on a later sweep once its checks pass; a conflict leaves it for the bot to rebase. |
 | Dismiss stale approvals on push     | Fine — the next sweep re-approves.                          |
 | Require linear history              | Fine — the engine merges with `--squash`.                   |
 | Restrict who can push or merge      | The App must be an allowed or bypass actor.                 |

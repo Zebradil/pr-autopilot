@@ -823,6 +823,14 @@ def approve_and_merge(facts: Facts) -> tuple[bool, str]:
         return True, "merged"
     if after["mergeStateStatus"] == "BLOCKED":
         return False, "blocked (approved; likely requires a human review)"
+    if after["mergeStateStatus"] == "BEHIND":
+        # Strict status checks: an earlier merge in this sweep moved the base. Merging the base in
+        # restarts the checks, and the next sweep merges on green. GitHub refuses on a conflict.
+        try:
+            gh("pr", "update-branch", str(facts.number), "--repo", facts.repo)
+        except GhError as e:
+            return False, f"not merged: BEHIND; update-branch failed: {e}"
+        return False, "behind base; branch updated, merges once checks pass"
     return False, f"not merged: {out or after['mergeStateStatus']}"
 
 
