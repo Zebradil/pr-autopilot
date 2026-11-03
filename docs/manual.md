@@ -463,6 +463,7 @@ What has to hold for the autopilot to merge:
 | ----------------------------------- | ---------------------------------------------------------- |
 | Require a pull request, N approvals | Fine — the App's review counts, and the bot is the author.  |
 | Require status checks to pass       | Fine, and wanted ([ADR 0008](./adr/0008-checks-are-the-contract.md)). |
+| Require branches to be up to date   | Fine — a pull request left behind by an earlier merge gets the base merged in (`gh pr update-branch`) and merges on a later sweep once its checks pass; a conflict leaves it for the bot to rebase. With Renovate, list the autopilot in `gitIgnoredAuthors` (below). |
 | Dismiss stale approvals on push     | Fine — the next sweep re-approves.                          |
 | Require linear history              | Fine — the engine merges with `--squash`.                   |
 | Restrict who can push or merge      | The App must be an allowed or bypass actor.                 |
@@ -475,6 +476,18 @@ then sits at `blocked (approved; likely requires a human review)`. Either exempt
 accept that this repository is a reporting tool. **Signed commits** leave merging intact — GitHub signs the squash
 commit — but a repair agent pushes ordinary commits to the bot's branch, which the rule rejects (believed correct,
 verify before relying on it).
+
+**Up-to-date branches** need one change on the Renovate side. When the sweep merges the base into a pull request
+that fell behind, the merge commit's author is the autopilot. Renovate treats a branch with another author's commit
+as modified and stops rebasing or updating it. To prevent that, add the autopilot's commit email to Renovate's
+[`gitIgnoredAuthors`](https://docs.renovatebot.com/configuration-options/#gitignoredauthors):
+
+```json
+"gitIgnoredAuthors": ["<user-id>+<slug>[bot]@users.noreply.github.com"]
+```
+
+`<user-id>` is the App's bot account ID, not its App ID: `gh api 'users/<slug>[bot]' --jq .id`. With the token
+shortcut, use the token owner's commit email instead. Onboarding writes this entry when `renovate.json` is in reach.
 
 ## Commands
 
