@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.0](https://github.com/Zebradil/pr-autopilot/compare/v1.4.0...v1.5.0) (2026-11-03)
+
+
+### Features
+
+* **onboard:** link the operator's GitHub App installation page ([#27](https://github.com/Zebradil/pr-autopilot/issues/27)) ([623b136](https://github.com/Zebradil/pr-autopilot/commit/623b1363ed8a0bc72c706b923e898998f68ea89f))
+* **sweep:** update a merge-verdict branch left behind the base ([#29](https://github.com/Zebradil/pr-autopilot/issues/29)) ([f8701f6](https://github.com/Zebradil/pr-autopilot/commit/f8701f6246d850534145cd1cc8955c4b0d632c16))
+
 ## [1.4.0](https://github.com/Zebradil/pr-autopilot/compare/v1.3.0...v1.4.0) (2026-09-23)
 
 
