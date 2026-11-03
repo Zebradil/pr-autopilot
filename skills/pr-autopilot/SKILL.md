@@ -74,6 +74,20 @@ ecosystem names (`github_actions`, `npm_and_yarn`, …); write both if both bots
   `prHeader`, not `prBodyNotes`: notes are compiled once per upgrade with only that upgrade in scope, so the
   `upgrades` loop renders an empty list. `prFooter` has the right scope but replaces Renovate's attribution line.
 
+  In the same file, the autopilot's own commit email in `gitIgnoredAuthors`. When a merge leaves another pull
+  request behind the base, the sweep merges the base into that branch. Renovate treats any branch with another
+  author's commit as modified and stops rebasing it, so without this entry that pull request would get no more
+  updates from Renovate:
+
+  ```json
+  "gitIgnoredAuthors": ["<user-id>+<slug>[bot]@users.noreply.github.com"]
+  ```
+
+  For a GitHub App, `<slug>` is the App's slug and `<user-id>` comes from
+  `gh api 'users/<slug>[bot]' --jq .id`. This is the App's bot account ID, not its App ID. If the prompt names the
+  operator's App, fill both in. If not, leave the placeholder and add it to the operator's steps. For the token
+  shortcut, use the token owner's commit email instead.
+
 - Check improvements, each as its own commit with a message saying what it protects against, so the operator can
   drop them individually.
 
