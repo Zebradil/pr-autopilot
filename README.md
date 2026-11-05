@@ -36,9 +36,9 @@ nix run github:Zebradil/pr-autopilot -- onboard --agent "opencode --prompt {prom
 ```
 
 `onboard --agent` starts the agent interactively with the onboarding instructions as its first prompt, appended to the
-command or put in place of `{prompt}`. The agent asks for the repository's criticality, then opens a pull request
-with the policy, the workflows and suggested check improvements. It leaves two steps to you: creating the labels and
-setting up the identity ([manual, "Identity"](./docs/manual.md#identity)). Name your GitHub App in the
+command or put in place of `{prompt}`. The agent asks for the repository's criticality and for the go-ahead to create
+the labels, then opens a pull request with the policy, the workflows and suggested check improvements. It leaves
+setting up the identity to you ([manual, "Identity"](./docs/manual.md#identity)). Name your GitHub App in the
 [operator file](./docs/manual.md#operator-file) (`app = "<slug>"`) and onboarding links its installation page in the
 pull request and in those steps.
 
