@@ -517,11 +517,12 @@ job summary and `--json` output are never coloured.
 
 ## Onboarding
 
-Onboarding studies one repository and delivers a pull request containing the policy file, the labels, the bot
-metadata template, and — as separate commits that can be dropped — the checks it thinks are missing. It detects what
-is detectable (release mechanism, whether main deploys, gates, bot configuration), reasons about test confidence from
-what the tests actually assert, and asks the operator for criticality. Its evidence goes in the pull request
-description, so the policy is reviewable without re-deriving it.
+Onboarding studies one repository and delivers a pull request containing the policy file, the bot metadata
+template, and — as separate commits that can be dropped — the checks it thinks are missing. It detects what is
+detectable (release mechanism, whether main deploys, gates, bot configuration), reasons about test confidence from
+what the tests actually assert, and asks the operator for criticality and for the go-ahead to create the labels,
+which live on GitHub rather than in the pull request. Its evidence goes in the pull request description, so the
+policy is reviewable without re-deriving it.
 
 `pr-autopilot onboard --agent CMD` runs it: the agent command starts interactively in the current directory, with
 the onboarding instructions from `skills/pr-autopilot/SKILL.md` appended as its first prompt, or substituted for a

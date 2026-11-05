@@ -48,6 +48,15 @@ deployment is not visible in the repository.
 Show the operator the evidence, the axes you concluded, and the policy table you would write. Wait for
 corrections. Running unattended, skip the waiting and put the same content in the pull request description.
 
+Ask about the labels in the same message, not after the pull request: once it is open, the operator's attention
+moves to merging it, and a question asked then is easy to miss. `pr_autopilot.py labels --repo <owner/repo>` writes
+the five labels straight to GitHub, outside the pull request the operator will review, so show the command and the
+labels it creates and wait for an explicit go-ahead. On a yes, run it before opening the pull request. The first
+real sweep needs the labels: the engine does not check its label writes, so without `autopilot/escalated` an
+escalation fails silently and does not stick — a later sweep re-derives the verdict as if no human had been asked.
+Never create labels unasked, and never run it against a repository the operator has not named. Running unattended,
+there is no go-ahead to get, so the command becomes the first of the operator's steps below.
+
 Default shape: patch/minor/digest/pin/lockfile merge, major escalates. Tighten when
 `deploys_from_main = true` or `test_confidence` is low — in the extreme, everything escalates and the
 autopilot is only a reporting tool until the checks improve. Loosen only when the checks genuinely justify it.
@@ -97,11 +106,6 @@ editing a repository's protection to make pull requests merge is the same move a
 yours to make even with an admin token. If the rules are already compatible, say so in one line; the operator
 should not have to re-derive it.
 
-Labels are not part of the pull request: `pr_autopilot.py labels --repo <owner/repo>` writes the five labels
-straight to GitHub. Because it lands outside the pull request the operator is reviewing, show them the command and
-the labels it creates, and wait for an explicit go-ahead before running it. Never create labels unasked, and never
-run it against a repository the operator has not named.
-
 Finally, the identity: the delivered workflow sweeps this repository on its own schedule, so the one thing left
 outside the pull request is the credential it runs as, without which the autopilot does nothing. Point the operator
 at a GitHub App installed on the repository — the documented path (ADR 0014): the audit log shows the autopilot
@@ -122,6 +126,8 @@ your closing message after opening the pull request repeats them. Link the App i
 installation page, `https://github.com/apps/<slug>/installations/new`, when the prompt names the operator's App;
 otherwise `docs/manual.md`, "Creating the App". Include only the steps this repository still needs:
 
+- If you did not create the labels during the proposal, create them before merging:
+  `pr_autopilot.py labels --repo <owner/repo>`.
 - If the repository's owner is not the account that owns the App, the App must first be made installable on any
   account (the App's settings, "Make public").
 - Install the App on the repository; with octo-sts, on the owner's `.github` repository too.
