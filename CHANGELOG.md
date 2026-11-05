@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.1](https://github.com/Zebradil/pr-autopilot/compare/v1.5.0...v1.5.1) (2026-11-05)
+
+
+### Bug Fixes
+
+* **onboard:** ask for the labels with the proposal ([#30](https://github.com/Zebradil/pr-autopilot/issues/30)) ([ff77f33](https://github.com/Zebradil/pr-autopilot/commit/ff77f33a57084c42b603464e8b639867e0ea7106))
+
 ## [1.5.0](https://github.com/Zebradil/pr-autopilot/compare/v1.4.0...v1.5.0) (2026-11-03)
 
 
